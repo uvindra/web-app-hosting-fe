@@ -28,7 +28,7 @@ app has exactly one target, so all of that is gone: no `PRODUCT` env, no path al
 Dropped everything that was integration-feature-specific or unused here: GraphQL client,
 `@monaco-editor/react`, `mermaid`, `swagger-ui-react`/`@apidevtools/swagger-parser`,
 `@wso2/cell-diagram`, `@modelcontextprotocol/sdk`, markdown/syntax-highlighting packages. Kept:
-`react`, `react-router`, `@tanstack/react-query`, `@wso2/oxygen-ui` (+icons), and the same
+`react`, `react-router`, `@tanstack/react-query`, `@wso2/oxygen-ui` (+icons, +`-charts-react` for the Metrics page), and the same
 Vite/TS/ESLint/Prettier/Vitest/Playwright tooling versions as ipaas.
 
 ### Simplified scope model
@@ -41,15 +41,28 @@ variants. This app only ever has Org → Project → WebApp (3 fixed levels), so
 
 ### Sidebar scope
 
-ipaas's `AppLayout` sidebar has many sections (Build, Deploy, Observe, Domains, Settings, etc.).
-This app's sidebar (`src/layouts/AppLayout.tsx`) has **only "Overview"** — the other sections
-aren't in the wireframes and were deliberately left out entirely (no placeholder pages either),
-per an explicit decision during planning. Add them back as real sections when they're designed,
-not as empty stubs.
+Inside a web app (`hasWebApp(scope)`), the sidebar (`src/layouts/AppLayout.tsx`, items declared
+in `src/nav.ts`) shows: Overview, Build, Deploy, Observe (Metrics, Runtime Logs), DevOps
+(Runtime, Containers, Configs & Secrets, Health Checks, Scaling) and Settings (tabs: Deployment
+Tracks, URL Settings). At org/project level it still only shows Overview. The menu is the
+intersection of the choreo-console Web App menu and the generic pages ipaas already has; it
+is scoped to **buildpack and BYOC web apps** (no BYOI image-only flows).
+
+Deliberately **not** ported (choreo-console has them for web apps or ipaas has them, but they
+were cut for scope or because they're Choreo/APIM/MI-specific): Connections, Insights,
+Incidents, Test/Manage, Execute, Develop, API Governance, Audit Logs, CI Workflows/External CI,
+Access Control (RBAC), Alerts and Storage (ipaas has no cloud backend for those either),
+Authentication Keys (waiting on the auth-model design), the short-URL feature, the free-hours
+quota banner and the Local Development proxy wizard. Add them back as real sections when
+designed, not as empty stubs.
+
+Ported pages were stripped of `GENERIC_SERVICE_TYPES` / `identifyIntegration` / APIM
+endpoint-and-visibility drawers / subscription and BYOI gating / gateway-logs tab.
 
 ### Backend doesn't exist yet — everything is stubbed
 
-The Web App Hosting backend hasn't been built. `src/api/{orgs,projects,webApps,builds,samples}.ts`
+The Web App Hosting backend hasn't been built. `src/api/*.ts` (orgs, projects, webApps, builds, deployments, runtime, containers, configs,
+healthChecks, scaling, metrics, logs, deploymentTracks, urlSettings, samples)
 resolve from `src/mock-data/*.ts` after an artificial delay, with function signatures written to
 match what a real REST client will look like — swapping in real `httpClient` calls later should
 be a small diff per file, not a rewrite. `src/contexts/AccessControlContext.tsx` /
@@ -116,6 +129,42 @@ from production builds) and `pnpm demo` (`vite --open /dev-login`) launches stra
 ipaas has no equivalent — it always requires its real dev IdP.
 
 ## Changelog
+
+### 2026-09-29 — Web App sidebar pages (single commit)
+
+Extended the Web App detail page's left menu beyond Overview, porting generic pages from ipaas
+and shaping them to choreo-console's Web App scope (see [Sidebar scope](#sidebar-scope)).
+
+- **Nav plumbing:** `paths.ts` builders for every page; `nav.ts` has the sidebar item table
+  and `resolveWebAppNavId` (active item from the pathname); `routes.tsx` registers the routes
+  (`/settings` redirects to the first tab); `AppLayout` renders the Web App sidebar only in a
+  web-app scope. Shared frame `components/webapp/WebAppPage.tsx` + `useWebAppContext` (org →
+  project → web app lookup with loading/not-found), `EnvironmentSelect`, `constants/environments`.
+- **Pages:** Build (commit card, history + logs drawer, read-only build config, trigger),
+  Deploy (build area → Development → Production cards, URL row, promote/redeploy/stop, history),
+  Overview (env cards now show URL/build and link to Build/Deploy), Metrics (charts), Runtime
+  Logs (filters, load-more), Runtime (pods, events, logs, redeploy), Containers, Configs &
+  Secrets, Health Checks, Scaling (scale-to-zero first), Settings → Deployment Tracks and URL
+  Settings (custom domains + DNS verify).
+- **Stubs (all new `api/*.ts` follow the existing pattern):** in-memory stores per web app id
+  (and environment where relevant), `delay(200)`, defaults so any web app renders. Build
+  config is mocked per web app (`MOCK_BUILD_CONFIGS`), not read from creation input;
+  deployment track is treated as the git branch; build/deploy completion is simulated with
+  `setTimeout` in the API stub.
+- **Deployments store is the source of truth for environments:** `api/deployments.ts`
+  (`environmentsFromStore`) now backs `fetchEnvironments` and Scaling's replica lookup, so
+  Deploy, Overview and the per-environment pages agree. Removed the now-dead
+  `mock-data/environments.ts`.
+- **Deps:** added `@wso2/oxygen-ui-charts-react` (same ^0.8.0 as ipaas).
+- **Browser check (dark + light):** walked every page in `pnpm demo`. Fixed what it turned up:
+  sidebar groups now open around the active page (`webAppNavGroupOf`; an explicit user toggle
+  still wins), Latency p50 no longer shares the primary orange with p95, Runtime's release
+  fields no longer clip the port, and URL Settings' default URLs/CNAME now come from the same
+  `buildWebAppHost` as Deploy so the web app URL is consistent everywhere.
+- **Tidy-up:** all web-app pages share one content width (`WEB_APP_PAGE_MAX_WIDTH`, 1100px —
+  Overview, Metrics and Logs no longer differ). The Build page's latest commit now reads the web
+  app's own `latestCommit` (same as Overview), so commit/build timestamps agree; apps without
+  one fall back to a commit dated just before their newest build.
 
 ### 2026-09-28 — Build Preset logos
 

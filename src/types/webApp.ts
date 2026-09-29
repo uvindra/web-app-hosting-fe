@@ -67,8 +67,10 @@ export interface Build {
   triggeredAt: string;
 }
 
+export type EnvironmentId = 'development' | 'production';
+
 export interface EnvironmentDeployment {
-  environment: 'development' | 'production';
+  environment: EnvironmentId;
   deployed: boolean;
   status?: WebAppStatus;
 }

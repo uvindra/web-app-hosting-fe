@@ -51,8 +51,10 @@ a `hooks/` TanStack Query wrapper.
   builder. **Never write a raw URL/path string anywhere else** — always call a builder from
   `paths.ts` (a HOUSE_RULES.md rule inherited from ipaas).
 - `src/layouts/AppLayout.tsx` — the authenticated app shell (org/project switcher, sidebar).
-  Sidebar only has "Overview" — no Build/Deploy/Observe/Domains/Settings sections; don't add
-  placeholder pages for those, add real ones only once they're actually designed.
+  Inside a web app the sidebar shows Overview, Build, Deploy, Observe, DevOps and Settings
+  (items declared in `src/nav.ts`); org/project level only has "Overview". Don't add pages for
+  sections that aren't designed yet (see `ADAPTATION_NOTES.md` → Sidebar scope for what was
+  deliberately left out).
 - `src/auth/` — OIDC+PKCE, ported from ipaas.
 - `src/contexts/AccessControlContext.tsx` / `src/components/Authorized.tsx` — **always-allow
   stub**, no real permission model exists yet.

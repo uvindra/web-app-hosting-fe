@@ -1,19 +1,21 @@
 import type { JSX } from 'react';
-import { Box, Chip, CircularProgress, Divider, PageContent, Stack, Typography } from '@wso2/oxygen-ui';
+import { Link } from 'react-router';
+import { Box, Chip, CircularProgress, PageContent, Stack, Typography } from '@wso2/oxygen-ui';
 import { AppWindow, GitBranch, Github } from '@wso2/oxygen-ui-icons-react';
 import EmptyListing from '../components/EmptyListing';
+import { WEB_APP_PAGE_MAX_WIDTH } from '../components/webapp/WebAppPage';
 import { useProjectByHandler } from '../hooks/useProjects';
 import { useWebAppByHandler } from '../hooks/useWebApps';
-import { useBuilds, useEnvironments } from '../hooks/useBuilds';
+import { useBuilds } from '../hooks/useBuilds';
+import { useDeployments } from '../hooks/useDeployments';
+import OverviewEnvironmentCard from '../components/deploy/OverviewEnvironmentCard';
+import { currentDeployment } from '../components/deploy/deploymentUtils';
 import { hasProject, hasWebApp, useScope } from '../nav';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
 import { getStatusColor } from '../utils/statusColor';
-import type { EnvironmentDeployment, WebApp } from '../types/webApp';
-
-const ENV_LABEL: Record<EnvironmentDeployment['environment'], string> = {
-  development: 'Development',
-  production: 'Production',
-};
+import { ENVIRONMENT_IDS } from '../constants/environments';
+import { webAppBuildUrl, webAppDeployUrl } from '../paths';
+import type { WebApp } from '../types/webApp';
 
 function SourceLink({ webApp }: { webApp: WebApp }): JSX.Element | null {
   if (!webApp.repoUrl) return null;
@@ -38,13 +40,13 @@ function SourceLink({ webApp }: { webApp: WebApp }): JSX.Element | null {
   );
 }
 
-function LatestBuildCard({ webAppId }: { webAppId: string }): JSX.Element {
+function LatestBuildCard({ webAppId, buildUrl }: { webAppId: string; buildUrl: string }): JSX.Element {
   const { data: builds, isLoading } = useBuilds(webAppId);
   const lastBuild = builds?.[0];
 
   return (
     <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 3, mb: 3 }}>
-      <Typography variant="h6" component="h2" sx={{ mb: lastBuild || isLoading ? 1.5 : 0 }}>
+      <Typography variant="h6" component={Link} to={buildUrl} sx={{ display: 'block', color: 'inherit', textDecoration: 'none', '&:hover': { color: 'primary.main' }, mb: lastBuild || isLoading ? 1.5 : 0 }}>
         Latest Build
       </Typography>
       {isLoading ? (
@@ -71,27 +73,6 @@ function LatestBuildCard({ webAppId }: { webAppId: string }): JSX.Element {
   );
 }
 
-function EnvironmentCard({ env }: { env: EnvironmentDeployment }): JSX.Element {
-  return (
-    <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 3, mb: 3 }}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between">
-        <Typography variant="h6" component="h2">
-          {ENV_LABEL[env.environment]}
-        </Typography>
-        {env.deployed && env.status && <Chip label={env.status === 'active' ? 'Active' : env.status} color={getStatusColor(env.status)} size="small" />}
-      </Stack>
-      {!env.deployed && (
-        <>
-          <Divider sx={{ my: 2 }} />
-          <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
-            This component has not been deployed to this environment yet.
-          </Typography>
-        </>
-      )}
-    </Box>
-  );
-}
-
 /** Wireframe page 8 — the created web app's overview: source/commit header, latest build, per-environment deployment status. */
 export default function WebAppOverview(): JSX.Element {
   const scope = useScope();
@@ -101,7 +82,7 @@ export default function WebAppOverview(): JSX.Element {
   const { data: project, isLoading: loadingProject } = useProjectByHandler(scope.org, projectHandler);
   const projectId = project?.id ?? '';
   const { data: webApp, isLoading: loadingWebApp } = useWebAppByHandler(projectId, webAppHandler);
-  const { data: environments, isLoading: loadingEnvironments } = useEnvironments(webApp?.id ?? '');
+  const { data: deployments, isLoading: loadingDeployments } = useDeployments(webApp?.id ?? '');
 
   if (loadingProject || (loadingWebApp && !!projectId)) {
     return (
@@ -120,7 +101,7 @@ export default function WebAppOverview(): JSX.Element {
   }
 
   return (
-    <PageContent sx={{ pt: 4, maxWidth: 900 }}>
+    <PageContent sx={{ pt: 4, maxWidth: WEB_APP_PAGE_MAX_WIDTH }}>
       <Stack direction="row" alignItems="center" gap={2} sx={{ mb: 1 }}>
         <AppWindow size={32} />
         <Typography variant="h1">{webApp.displayName}</Typography>
@@ -150,14 +131,14 @@ export default function WebAppOverview(): JSX.Element {
         )}
       </Stack>
 
-      <LatestBuildCard webAppId={webApp.id} />
+      <LatestBuildCard webAppId={webApp.id} buildUrl={webAppBuildUrl(scope.org, projectHandler, webAppHandler)} />
 
-      {loadingEnvironments ? (
+      {loadingDeployments ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
           <CircularProgress size={24} />
         </Box>
       ) : (
-        (environments ?? []).map((env) => <EnvironmentCard key={env.environment} env={env} />)
+        ENVIRONMENT_IDS.map((environment) => <OverviewEnvironmentCard key={environment} environment={environment} current={currentDeployment(deployments ?? [], environment)} deployUrl={webAppDeployUrl(scope.org, projectHandler, webAppHandler)} />)
       )}
     </PageContent>
   );

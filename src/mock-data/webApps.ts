@@ -20,7 +20,7 @@ export const MOCK_WEB_APPS: Record<string, WebApp[]> = {
         sha: '7fb07eb',
         message: 'Add test message to readme',
         author: 'Amila De Silva',
-        committedAt: new Date(now - 147 * DAYS).toISOString(),
+        committedAt: new Date(now - 3 * HOURS).toISOString(),
       },
     },
     {
@@ -33,6 +33,12 @@ export const MOCK_WEB_APPS: Record<string, WebApp[]> = {
       updatedAt: new Date(now - 1 * DAYS).toISOString(),
       sourceType: 'github',
       repoUrl: 'https://github.com/amiladesilva/admin-dashboard',
+      latestCommit: {
+        sha: 'a3c9f21',
+        message: 'Update dashboard widgets',
+        author: 'Amila De Silva',
+        committedAt: new Date(now - 26 * HOURS).toISOString(),
+      },
     },
   ],
   'proj-my-portfolio': [

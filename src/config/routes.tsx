@@ -1,5 +1,5 @@
 import type { JSX } from 'react';
-import { Route, Routes } from 'react-router';
+import { Navigate, Route, Routes } from 'react-router';
 import ProtectedRoute from '../auth/ProtectedRoute';
 import AppLayout from '../layouts/AppLayout';
 import Login from '../pages/Login';
@@ -13,6 +13,18 @@ import CreateWebAppOptions from '../pages/CreateWebAppOptions';
 import ImportWebAppOptions from '../pages/ImportWebAppOptions';
 import CreateWebAppForm from '../pages/CreateWebAppForm';
 import WebAppOverview from '../pages/WebAppOverview';
+import WebAppBuild from '../pages/WebAppBuild';
+import WebAppDeploy from '../pages/WebAppDeploy';
+import WebAppMetrics from '../pages/WebAppMetrics';
+import WebAppRuntimeLogs from '../pages/WebAppRuntimeLogs';
+import WebAppRuntime from '../pages/WebAppRuntime';
+import WebAppContainers from '../pages/WebAppContainers';
+import WebAppConfigs from '../pages/WebAppConfigs';
+import WebAppHealthChecks from '../pages/WebAppHealthChecks';
+import WebAppScaling from '../pages/WebAppScaling';
+import WebAppSettings from '../pages/WebAppSettings';
+import WebAppDeploymentTracks from '../pages/WebAppDeploymentTracks';
+import WebAppUrlSettings from '../pages/WebAppUrlSettings';
 import GitHubAuthCallback from '../pages/GitHubAuthCallback';
 import DevSeedSession from '../pages/DevSeedSession';
 import { ghAppCallbackUrl, loginUrl, oidcCallbackUrl } from '../paths';
@@ -40,6 +52,20 @@ export default function AppRoutes(): JSX.Element {
           <Route path="/organizations/:orgHandler/projects/:projectHandler/webapps/new/import" element={<ImportWebAppOptions />} />
           <Route path="/organizations/:orgHandler/projects/:projectHandler/webapps/new/configure" element={<CreateWebAppForm />} />
           <Route path="/organizations/:orgHandler/projects/:projectHandler/webapps/:webAppHandler/overview" element={<WebAppOverview />} />
+          <Route path="/organizations/:orgHandler/projects/:projectHandler/webapps/:webAppHandler/build" element={<WebAppBuild />} />
+          <Route path="/organizations/:orgHandler/projects/:projectHandler/webapps/:webAppHandler/deploy" element={<WebAppDeploy />} />
+          <Route path="/organizations/:orgHandler/projects/:projectHandler/webapps/:webAppHandler/observe/metrics" element={<WebAppMetrics />} />
+          <Route path="/organizations/:orgHandler/projects/:projectHandler/webapps/:webAppHandler/observe/logs" element={<WebAppRuntimeLogs />} />
+          <Route path="/organizations/:orgHandler/projects/:projectHandler/webapps/:webAppHandler/devops/runtime" element={<WebAppRuntime />} />
+          <Route path="/organizations/:orgHandler/projects/:projectHandler/webapps/:webAppHandler/devops/containers" element={<WebAppContainers />} />
+          <Route path="/organizations/:orgHandler/projects/:projectHandler/webapps/:webAppHandler/devops/configs" element={<WebAppConfigs />} />
+          <Route path="/organizations/:orgHandler/projects/:projectHandler/webapps/:webAppHandler/devops/health-checks" element={<WebAppHealthChecks />} />
+          <Route path="/organizations/:orgHandler/projects/:projectHandler/webapps/:webAppHandler/devops/scaling" element={<WebAppScaling />} />
+          <Route path="/organizations/:orgHandler/projects/:projectHandler/webapps/:webAppHandler/settings" element={<WebAppSettings />}>
+            <Route index element={<Navigate to="deployment-tracks" replace />} />
+            <Route path="deployment-tracks" element={<WebAppDeploymentTracks />} />
+            <Route path="url-settings" element={<WebAppUrlSettings />} />
+          </Route>
         </Route>
       </Route>
 

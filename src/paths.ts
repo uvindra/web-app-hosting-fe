@@ -48,6 +48,59 @@ export function webAppOverviewUrl(orgHandler: string, projectHandler: string, we
   return `/organizations/${orgHandler}/projects/${projectHandler}/webapps/${webAppHandler}/overview`;
 }
 
+function webAppBase(orgHandler: string, projectHandler: string, webAppHandler: string): string {
+  return `/organizations/${orgHandler}/projects/${projectHandler}/webapps/${webAppHandler}`;
+}
+
+export function webAppBuildUrl(org: string, project: string, webApp: string): string {
+  return `${webAppBase(org, project, webApp)}/build`;
+}
+
+export function webAppDeployUrl(org: string, project: string, webApp: string): string {
+  return `${webAppBase(org, project, webApp)}/deploy`;
+}
+
+export function webAppMetricsUrl(org: string, project: string, webApp: string): string {
+  return `${webAppBase(org, project, webApp)}/observe/metrics`;
+}
+
+export function webAppRuntimeLogsUrl(org: string, project: string, webApp: string): string {
+  return `${webAppBase(org, project, webApp)}/observe/logs`;
+}
+
+export function webAppRuntimeUrl(org: string, project: string, webApp: string): string {
+  return `${webAppBase(org, project, webApp)}/devops/runtime`;
+}
+
+export function webAppContainersUrl(org: string, project: string, webApp: string): string {
+  return `${webAppBase(org, project, webApp)}/devops/containers`;
+}
+
+export function webAppConfigsUrl(org: string, project: string, webApp: string): string {
+  return `${webAppBase(org, project, webApp)}/devops/configs`;
+}
+
+export function webAppHealthChecksUrl(org: string, project: string, webApp: string): string {
+  return `${webAppBase(org, project, webApp)}/devops/health-checks`;
+}
+
+export function webAppScalingUrl(org: string, project: string, webApp: string): string {
+  return `${webAppBase(org, project, webApp)}/devops/scaling`;
+}
+
+/** Settings landing — redirects to the first settings tab. */
+export function webAppSettingsUrl(org: string, project: string, webApp: string): string {
+  return `${webAppBase(org, project, webApp)}/settings`;
+}
+
+export function webAppDeploymentTracksUrl(org: string, project: string, webApp: string): string {
+  return `${webAppBase(org, project, webApp)}/settings/deployment-tracks`;
+}
+
+export function webAppUrlSettingsUrl(org: string, project: string, webApp: string): string {
+  return `${webAppBase(org, project, webApp)}/settings/url-settings`;
+}
+
 // ---------------------------------------------------------------------------
 // External links
 // ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import type { JSX } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   AppShell,
@@ -27,17 +27,19 @@ import {
   UserMenu,
   useAppShell,
 } from '@wso2/oxygen-ui';
-import { ChevronDown, ChevronRight, LayoutDashboard, LogOut, Search } from '@wso2/oxygen-ui-icons-react';
+import { BarChart3, Boxes, ChevronDown, ChevronRight, Eye, Hammer, HeartPulse, KeyRound, LayoutDashboard, LogOut, Rocket, ScrollText, Search, Server, Settings, SlidersHorizontal } from '@wso2/oxygen-ui-icons-react';
 import { useAuth } from '../auth/AuthContext';
 import { useOrgs } from '../hooks/useOrgs';
 import { useProjects, useProjectByHandler } from '../hooks/useProjects';
-import { hasProject, useScope } from '../nav';
+import { hasProject, hasWebApp, resolveWebAppNavId, useScope, webAppNavGroupOf, WEB_APP_NAV_LEAVES } from '../nav';
+import type { WebAppNavId } from '../nav';
 import { external, orgHomeUrl, projectHomeUrl } from '../paths';
 import { switchOrgToken } from '../auth/tokenManager';
 
 export default function AppLayout(): JSX.Element {
   const navigate = useNavigate();
   const scope = useScope();
+  const { pathname } = useLocation();
   const queryClient = useQueryClient();
   const { displayName, username, logout } = useAuth();
 
@@ -64,7 +66,20 @@ export default function AppLayout(): JSX.Element {
   const { data: project } = useProjectByHandler(scope.org, projectHandler);
   const { data: projects = [] } = useProjects(scope.org);
 
-  const activeNavId = 'overview';
+  const activeNavId: WebAppNavId = hasWebApp(scope) ? resolveWebAppNavId(scope, pathname) : 'overview';
+
+  // The group holding the active page opens by default; an explicit user toggle (true/false) wins.
+  const activeGroup = webAppNavGroupOf(activeNavId);
+  const expandedMenus = activeGroup ? { [activeGroup]: true, ...shell.expandedMenus } : shell.expandedMenus;
+
+  const handleNavSelect = (id: string) => {
+    if (hasWebApp(scope)) {
+      const leaf = WEB_APP_NAV_LEAVES.find((l) => l.id === id);
+      if (leaf) navigate(leaf.url(scope));
+      return;
+    }
+    navigate(hasProject(scope) ? projectHomeUrl(scope.org, scope.project) : orgHomeUrl(scope.org));
+  };
 
   const handleSwitchOrg = (handle: string) => {
     setOrgMenuAnchor(null);
@@ -294,7 +309,7 @@ export default function AppLayout(): JSX.Element {
       </AppShell.Navbar>
 
       <AppShell.Sidebar>
-        <Sidebar collapsed={shell.sidebarCollapsed} activeItem={activeNavId} expandedMenus={shell.expandedMenus} onSelect={() => navigate(hasProject(scope) ? projectHomeUrl(scope.org, scope.project) : orgHomeUrl(scope.org))} onToggleExpand={actions.toggleMenu}>
+        <Sidebar collapsed={shell.sidebarCollapsed} activeItem={activeNavId} expandedMenus={expandedMenus} onSelect={handleNavSelect} onToggleExpand={actions.toggleMenu}>
           <Sidebar.Nav>
             <Sidebar.Category key="overview">
               <Sidebar.Item id="overview">
@@ -303,6 +318,82 @@ export default function AppLayout(): JSX.Element {
                 </Sidebar.ItemIcon>
                 <Sidebar.ItemLabel>Overview</Sidebar.ItemLabel>
               </Sidebar.Item>
+              {hasWebApp(scope) && (
+                <>
+                  <Sidebar.Item id="build">
+                    <Sidebar.ItemIcon>
+                      <Hammer size={20} />
+                    </Sidebar.ItemIcon>
+                    <Sidebar.ItemLabel>Build</Sidebar.ItemLabel>
+                  </Sidebar.Item>
+                  <Sidebar.Item id="deploy">
+                    <Sidebar.ItemIcon>
+                      <Rocket size={20} />
+                    </Sidebar.ItemIcon>
+                    <Sidebar.ItemLabel>Deploy</Sidebar.ItemLabel>
+                  </Sidebar.Item>
+                  <Sidebar.Item id="observe">
+                    <Sidebar.ItemIcon>
+                      <Eye size={20} />
+                    </Sidebar.ItemIcon>
+                    <Sidebar.ItemLabel>Observe</Sidebar.ItemLabel>
+                    <Sidebar.Item id="metrics">
+                      <Sidebar.ItemIcon>
+                        <BarChart3 size={20} />
+                      </Sidebar.ItemIcon>
+                      <Sidebar.ItemLabel>Metrics</Sidebar.ItemLabel>
+                    </Sidebar.Item>
+                    <Sidebar.Item id="runtime-logs">
+                      <Sidebar.ItemIcon>
+                        <ScrollText size={20} />
+                      </Sidebar.ItemIcon>
+                      <Sidebar.ItemLabel>Runtime Logs</Sidebar.ItemLabel>
+                    </Sidebar.Item>
+                  </Sidebar.Item>
+                  <Sidebar.Item id="devops">
+                    <Sidebar.ItemIcon>
+                      <SlidersHorizontal size={20} />
+                    </Sidebar.ItemIcon>
+                    <Sidebar.ItemLabel>DevOps</Sidebar.ItemLabel>
+                    <Sidebar.Item id="runtime">
+                      <Sidebar.ItemIcon>
+                        <Server size={20} />
+                      </Sidebar.ItemIcon>
+                      <Sidebar.ItemLabel>Runtime</Sidebar.ItemLabel>
+                    </Sidebar.Item>
+                    <Sidebar.Item id="containers">
+                      <Sidebar.ItemIcon>
+                        <Boxes size={20} />
+                      </Sidebar.ItemIcon>
+                      <Sidebar.ItemLabel>Containers</Sidebar.ItemLabel>
+                    </Sidebar.Item>
+                    <Sidebar.Item id="configs">
+                      <Sidebar.ItemIcon>
+                        <KeyRound size={20} />
+                      </Sidebar.ItemIcon>
+                      <Sidebar.ItemLabel>Configs &amp; Secrets</Sidebar.ItemLabel>
+                    </Sidebar.Item>
+                    <Sidebar.Item id="health-checks">
+                      <Sidebar.ItemIcon>
+                        <HeartPulse size={20} />
+                      </Sidebar.ItemIcon>
+                      <Sidebar.ItemLabel>Health Checks</Sidebar.ItemLabel>
+                    </Sidebar.Item>
+                    <Sidebar.Item id="scaling">
+                      <Sidebar.ItemIcon>
+                        <SlidersHorizontal size={20} />
+                      </Sidebar.ItemIcon>
+                      <Sidebar.ItemLabel>Scaling</Sidebar.ItemLabel>
+                    </Sidebar.Item>
+                  </Sidebar.Item>
+                  <Sidebar.Item id="settings">
+                    <Sidebar.ItemIcon>
+                      <Settings size={20} />
+                    </Sidebar.ItemIcon>
+                    <Sidebar.ItemLabel>Settings</Sidebar.ItemLabel>
+                  </Sidebar.Item>
+                </>
+              )}
             </Sidebar.Category>
           </Sidebar.Nav>
         </Sidebar>
