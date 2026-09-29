@@ -1,0 +1,14 @@
+{
+  "VITE_WEBAPP_API_URL": "https://localhost:9450/webapp-hosting/api/v1",
+  "VITE_AUTH_BASE_URL": "https://localhost:9445/auth",
+  "ASGARDEO_CLIENT_ID": "REPLACE_ME",
+  "ASGARDEO_AUTHORIZE_ENDPOINT": "https://dev.api.asgardeo.io/t/a/oauth2/authorize",
+  "ASGARDEO_TOKEN_ENDPOINT": "https://dev.api.asgardeo.io/t/a/oauth2/token",
+  "ASGARDEO_SCOPE": "openid profile email groups",
+  "STS_TOKEN_ENDPOINT": "https://localhost:9446/sts/oauth2/token",
+  "STS_CLIENT_ID": "REPLACE_ME",
+  "STS_SCOPE": "REPLACE_ME",
+  "GITHUB_APP_CLIENT_ID": "REPLACE_ME",
+  "GITHUB_APP_AUTH_REDIRECTION_URL": "",
+  "GITHUB_APP_SLUG": "REPLACE_ME"
+}

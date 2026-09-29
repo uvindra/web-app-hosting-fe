@@ -1,0 +1,84 @@
+/**
+ * URL builders for every route in the app. No raw path strings anywhere else — see
+ * HOUSE_RULES.md's "no string URLs/paths anywhere except paths.ts".
+ */
+
+export function rootUrl(): string {
+  return '/';
+}
+
+export function loginUrl(): string {
+  return '/login';
+}
+
+export function oidcCallbackUrl(): string {
+  return '/signin';
+}
+
+/** Bare popup window that captures a GitHub OAuth `code`/`state` and relays it back via BroadcastChannel. */
+export function ghAppCallbackUrl(): string {
+  return '/ghapp';
+}
+
+export function orgHomeUrl(orgHandler: string): string {
+  return `/organizations/${orgHandler}`;
+}
+
+export function newProjectUrl(orgHandler: string): string {
+  return `/organizations/${orgHandler}/projects/new`;
+}
+
+export function projectHomeUrl(orgHandler: string, projectHandler: string): string {
+  return `/organizations/${orgHandler}/projects/${projectHandler}/home`;
+}
+
+export function newWebAppUrl(orgHandler: string, projectHandler: string): string {
+  return `/organizations/${orgHandler}/projects/${projectHandler}/webapps/new`;
+}
+
+export function importWebAppUrl(orgHandler: string, projectHandler: string): string {
+  return `/organizations/${orgHandler}/projects/${projectHandler}/webapps/new/import`;
+}
+
+export function configureWebAppUrl(orgHandler: string, projectHandler: string): string {
+  return `/organizations/${orgHandler}/projects/${projectHandler}/webapps/new/configure`;
+}
+
+export function webAppOverviewUrl(orgHandler: string, projectHandler: string, webAppHandler: string): string {
+  return `/organizations/${orgHandler}/projects/${projectHandler}/webapps/${webAppHandler}/overview`;
+}
+
+// ---------------------------------------------------------------------------
+// External links
+// ---------------------------------------------------------------------------
+
+export const external = {
+  wso2: 'https://www.wso2.com',
+  documentation: 'https://wso2.com/engineering-platform/developer-platform/docs/quick-start-guides/deploy-a-web-application-that-consumes-a-backend-service/',
+} as const;
+
+/** Public host bases used to build a web app's source repo URL per git provider. */
+export const gitProviderBase = {
+  github: 'https://github.com',
+  bitbucket: 'https://bitbucket.org',
+  gitlab: 'https://gitlab.com',
+  azure: 'https://dev.azure.com',
+} as const;
+
+// Build GitHub OAuth authorization URL for repository access.
+// redirectUri falls back to window.location.origin + '/ghapp' when empty.
+export function buildGitHubOAuthUrl(redirectUri: string, clientId: string, state: string, scope = 'repo,read:user'): string {
+  const params = new URLSearchParams({
+    redirect_uri: redirectUri || `${window.location.origin}/ghapp`,
+    client_id: clientId,
+    scope,
+    state,
+  });
+  return `https://github.com/login/oauth/authorize?${params.toString()}`;
+}
+
+// GitHub App installation page — opened when the user authorized the App but
+// has not installed it on any account/org yet (bind returns 409).
+export function buildGitHubAppInstallUrl(slug: string): string {
+  return `https://github.com/apps/${slug}/installations/new`;
+}

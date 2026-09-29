@@ -1,0 +1,11 @@
+{
+  "name": "WSO2 Web App Hosting",
+  "short_name": "WebApp Hosting",
+  "icons": [
+    { "src": "/assets/images/logo/favicon-orange/android-chrome-192x192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/assets/images/logo/favicon-orange/android-chrome-512x512.png", "sizes": "512x512", "type": "image/png" }
+  ],
+  "theme_color": "#0a0a0a",
+  "background_color": "#0a0a0a",
+  "display": "standalone"
+}
