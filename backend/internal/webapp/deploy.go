@@ -335,8 +335,10 @@ func (s *Service) Promote(ctx context.Context, webAppID, trackID string, in Prom
 	if err != nil {
 		return nil, err
 	}
-	if src == nil || !bindingActive(*src) || deploymentStatus(*src) != DeployActive {
-		return nil, errf(CodeConflict, "nothing to promote: %s has no active deployment", in.SourceEnvironment)
+	// A release bound in the source is enough (it may be mid-rollout after a
+	// config change); a failed or stopped source is not promoted.
+	if src == nil || !bindingActive(*src) || deploymentStatus(*src) == DeployFailed {
+		return nil, errf(CodeConflict, "nothing to promote: %s has no running deployment", in.SourceEnvironment)
 	}
 	rel := releaseOf(*src)
 	run, _ := s.oc.GetWorkflowRun(ctx, ns(ctx), rel)
