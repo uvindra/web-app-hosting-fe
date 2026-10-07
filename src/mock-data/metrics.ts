@@ -16,7 +16,7 @@ export function generateMetrics(seed: string, range: MetricsRange, now: number =
   const memoryRows: WebAppMetrics['memoryRows'] = [];
 
   bucketTimes(range, now).forEach((time) => {
-    const label = bucketLabel(time, range);
+    const label = bucketLabel(time);
     const hour = new Date(time).getHours() + new Date(time).getMinutes() / 60;
     // Traffic peaks mid-afternoon and dips overnight.
     const wave = 0.65 + 0.35 * Math.sin(((hour - 9) / 24) * 2 * Math.PI);

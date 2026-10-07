@@ -130,6 +130,26 @@ ipaas has no equivalent — it always requires its real dev IdP.
 
 ## Changelog
 
+### 2026-10-06 — Metrics: removed the 7-day range
+
+- Dropped `'7d'` from `MetricsRange` / `METRICS_RANGES` and `RANGE_CONFIG`. Prometheus on the WSO2 Cloud observability plane keeps metrics for 3 days by default (`prometheus_metrics_retention_time`), so a 7-day window would be mostly empty. The longest range is now 24 hours.
+- `bucketLabel` no longer takes a range, since every window is at most a day and shows only the time of day. Its test was updated to match.
+- Runtime Logs keeps its "Past 7 days" filter, because logs are retained separately.
+
+### 2026-10-06 — Scaling: removed scale-to-zero; Deployment Tracks: branch picker
+
+- **Decision:** scale-to-zero is off the Scaling page for now. It needs KEDA on the WSO2 Cloud data plane, which changes the data plane's deployment architecture, so it's deferred. Scaling now offers only HPA and No Autoscaling (fixed replicas).
+- **Code changes:**
+  - Deleted `components/scaling/ScaleToZeroConfig.tsx`.
+  - Dropped `ScalingMethod.ScaleToZero` and `ScaleToZeroSettings` from `types/scaling.ts`, along with the "Recommended" scale-to-zero card and `MAX_TARGET_PENDING_REQUESTS`.
+  - Removed the "scaled to zero" empty-state text in `ReplicasTable`.
+- **New default:** No Autoscaling with 1 replica (`mock-data/scaling.ts`), matching the OpenChoreo web-application default.
+- **Deployment tracks:** a track is now identified only by its branch. A web app can have many tracks, each built and deployed from one branch of its repo.
+  - Removed the Track Name field and column (`DeploymentTrack.name`, `CreateDeploymentTrackInput.name`).
+  - `CreateTrackDialog` replaces free-text entry with a branch picker. It lists the repo's branches and leaves out branches that already have a track.
+  - New stub `fetchRepoBranches` / `useRepoBranches`, backed by `MOCK_REPO_BRANCHES` / `DEFAULT_REPO_BRANCHES` in `mock-data/deploymentTracks.ts`. The real backend reads branches from the Git provider (`git-app-service`'s `/git/github/branches` for GitHub-App repos).
+  - Delete and auto-deploy labels now name the branch.
+
 ### 2026-09-29 — Web App sidebar pages (single commit)
 
 Extended the Web App detail page's left menu beyond Overview, porting generic pages from ipaas

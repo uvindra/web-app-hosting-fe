@@ -8,10 +8,9 @@ import type { EnvironmentId } from '../../types/webApp';
 interface ReplicasTableProps {
   webAppId: string;
   environment: EnvironmentId;
-  scalesToZero: boolean;
 }
 
-export default function ReplicasTable({ webAppId, environment, scalesToZero }: ReplicasTableProps): JSX.Element {
+export default function ReplicasTable({ webAppId, environment }: ReplicasTableProps): JSX.Element {
   const { data: pods, isLoading, isError, isFetching, refetch } = useReplicas(webAppId, environment);
 
   if (isLoading) {
@@ -61,7 +60,7 @@ export default function ReplicasTable({ webAppId, environment, scalesToZero }: R
 
       {pods.length === 0 ? (
         <Typography variant="body2" color="text.secondary" sx={{ py: 3 }}>
-          {scalesToZero ? 'No running replicas. This web app is scaled to zero until it receives a request.' : 'No running replicas.'}
+          No running replicas.
         </Typography>
       ) : (
         <ListingTable.Container>

@@ -55,7 +55,6 @@ export default function WebAppDeploymentTracks(): JSX.Element {
           <ListingTable>
             <ListingTable.Head>
               <ListingTable.Row>
-                <ListingTable.Cell>Track</ListingTable.Cell>
                 <ListingTable.Cell>Branch</ListingTable.Cell>
                 <ListingTable.Cell>Auto Deploy</ListingTable.Cell>
                 <ListingTable.Cell align="right">Actions</ListingTable.Cell>
@@ -66,14 +65,9 @@ export default function WebAppDeploymentTracks(): JSX.Element {
                 <ListingTable.Row key={t.id}>
                   <ListingTable.Cell>
                     <Stack direction="row" alignItems="center" gap={1}>
-                      {t.name}
-                      {t.isDefault && <Chip label="Default" size="small" variant="outlined" color="primary" />}
-                    </Stack>
-                  </ListingTable.Cell>
-                  <ListingTable.Cell>
-                    <Stack direction="row" alignItems="center" gap={0.5}>
                       <GitBranch size={14} />
                       {t.branch}
+                      {t.isDefault && <Chip label="Default" size="small" variant="outlined" color="primary" />}
                     </Stack>
                   </ListingTable.Cell>
                   <ListingTable.Cell>
@@ -92,6 +86,7 @@ export default function WebAppDeploymentTracks(): JSX.Element {
       {creating && (
         <CreateTrackDialog
           webAppId={webApp.id}
+          trackedBranches={tracks.map((t) => t.branch)}
           onClose={() => setCreating(false)}
           onDone={(message) => {
             setCreating(false);

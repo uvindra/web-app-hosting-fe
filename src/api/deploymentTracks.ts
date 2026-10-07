@@ -1,5 +1,5 @@
 import type { CreateDeploymentTrackInput, DeploymentTrack, TrackDeletableResult } from '../types/deploymentTracks';
-import { defaultTracks, MOCK_DEPLOYMENT_TRACKS } from '../mock-data/deploymentTracks';
+import { DEFAULT_REPO_BRANCHES, defaultTracks, MOCK_DEPLOYMENT_TRACKS, MOCK_REPO_BRANCHES } from '../mock-data/deploymentTracks';
 
 // STUB — see src/api/projects.ts for the reasoning; same shape, swap for real calls later.
 const NETWORK_DELAY_MS = 200;
@@ -21,12 +21,18 @@ export async function fetchDeploymentTracks(webAppId: string): Promise<Deploymen
   return tracksFor(webAppId).map((t) => ({ ...t }));
 }
 
+/** Branches of the web app's Git repository (the real backend reads them from the Git provider). */
+export async function fetchRepoBranches(webAppId: string): Promise<string[]> {
+  await delay(NETWORK_DELAY_MS);
+  return [...(MOCK_REPO_BRANCHES[webAppId] ?? DEFAULT_REPO_BRANCHES)];
+}
+
 export async function createDeploymentTrack(webAppId: string, input: CreateDeploymentTrackInput): Promise<DeploymentTrack> {
   await delay(NETWORK_DELAY_MS);
   const tracks = tracksFor(webAppId);
-  if (tracks.some((t) => t.name === input.name)) throw new Error(`A deployment track named "${input.name}" already exists.`);
+  if (!(MOCK_REPO_BRANCHES[webAppId] ?? DEFAULT_REPO_BRANCHES).includes(input.branch)) throw new Error(`Branch "${input.branch}" was not found in the repository.`);
   if (tracks.some((t) => t.branch === input.branch)) throw new Error(`A deployment track for branch "${input.branch}" already exists.`);
-  const track: DeploymentTrack = { id: `track-${Date.now()}`, name: input.name, branch: input.branch, isDefault: false, autoDeploy: false, deployed: false, createdAt: new Date().toISOString() };
+  const track: DeploymentTrack = { id: `track-${Date.now()}`, branch: input.branch, isDefault: false, autoDeploy: false, deployed: false, createdAt: new Date().toISOString() };
   tracks.push(track);
   return { ...track };
 }

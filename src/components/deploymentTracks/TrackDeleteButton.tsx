@@ -26,7 +26,7 @@ export default function TrackDeleteButton({ webAppId, track, onResult }: TrackDe
     del.mutate(track.id, {
       onSuccess: () => {
         setConfirming(false);
-        onResult({ type: 'success', message: `Deployment track "${track.name}" deleted.` });
+        onResult({ type: 'success', message: `Deployment track for branch "${track.branch}" deleted.` });
       },
       onError: (e) => {
         setConfirming(false);
@@ -38,7 +38,7 @@ export default function TrackDeleteButton({ webAppId, track, onResult }: TrackDe
     <>
       <Tooltip title={track.isDefault ? 'The default track cannot be deleted' : 'Delete'}>
         <span>
-          <IconButton size="small" color="error" aria-label={`Delete ${track.name}`} disabled={track.isDefault || check.isPending} onClick={requestDelete}>
+          <IconButton size="small" color="error" aria-label={`Delete ${track.branch}`} disabled={track.isDefault || check.isPending} onClick={requestDelete}>
             {check.isPending ? <CircularProgress size={16} color="inherit" /> : <Trash2 size={16} />}
           </IconButton>
         </span>
@@ -48,7 +48,7 @@ export default function TrackDeleteButton({ webAppId, track, onResult }: TrackDe
           <DialogTitle>Delete deployment track?</DialogTitle>
           <DialogContent>
             <DialogContentText>
-              This permanently deletes the <strong>{track.name}</strong> deployment track (branch {track.branch}).
+              This permanently deletes the deployment track for branch <strong>{track.branch}</strong>.
             </DialogContentText>
           </DialogContent>
           <DialogActions>

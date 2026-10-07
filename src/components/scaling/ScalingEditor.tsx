@@ -1,7 +1,6 @@
 import { useState, type JSX } from 'react';
 import { Box, Button, CircularProgress, Stack, Typography } from '@wso2/oxygen-ui';
 import ScaleMethodCard from './ScaleMethodCard';
-import ScaleToZeroConfig from './ScaleToZeroConfig';
 import HpaConfig from './HpaConfig';
 import RangeInput from './RangeInput';
 import { MAX_REPLICAS, SCALING_METHODS } from './scalingConstants';
@@ -32,7 +31,6 @@ export default function ScalingEditor({ saved, isSaving, onSave }: ScalingEditor
         ))}
       </Stack>
 
-      {draft.method === ScalingMethod.ScaleToZero && <ScaleToZeroConfig value={draft.scaleToZero} onChange={(scaleToZero) => setDraft({ ...draft, scaleToZero })} />}
       {draft.method === ScalingMethod.HPA && <HpaConfig value={draft.hpa} onChange={(hpa) => setDraft({ ...draft, hpa })} />}
       {draft.method === ScalingMethod.None && <RangeInput label="Replicas" value={draft.fixedReplicas} onChange={(fixedReplicas) => setDraft({ ...draft, fixedReplicas })} min={1} max={MAX_REPLICAS} />}
 

@@ -8,7 +8,6 @@ export const RANGE_CONFIG: Record<MetricsRange, { minutes: number; points: numbe
   '1h': { minutes: 60, points: 30 },
   '6h': { minutes: 360, points: 36 },
   '24h': { minutes: 1440, points: 48 },
-  '7d': { minutes: 10080, points: 56 },
 };
 
 /** Timestamps (ms) of each chart point, oldest first, ending at `now`. */
@@ -20,11 +19,10 @@ export function bucketTimes(range: MetricsRange, now: number): number[] {
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
-/** X-axis label: time of day for windows up to a day, day plus hour for a week. */
-export function bucketLabel(time: number, range: MetricsRange): string {
+/** X-axis label: time of day (every range is at most a day long). */
+export function bucketLabel(time: number): string {
   const d = new Date(time);
-  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  return range === '7d' ? `${d.getMonth() + 1}/${d.getDate()} ${hm}` : hm;
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 /** Deterministic pseudo-random generator (mulberry32) so mock charts do not jitter between fetches. */

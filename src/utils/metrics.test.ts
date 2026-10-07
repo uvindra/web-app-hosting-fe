@@ -12,10 +12,9 @@ describe('bucketTimes', () => {
 });
 
 describe('bucketLabel', () => {
-  it('uses time of day up to 24h and adds the date for 7d', () => {
+  it('uses the time of day', () => {
     const t = new Date(2026, 2, 5, 9, 7).getTime();
-    expect(bucketLabel(t, '24h')).toBe('09:07');
-    expect(bucketLabel(t, '7d')).toBe('3/5 09:07');
+    expect(bucketLabel(t)).toBe('09:07');
   });
 });
 

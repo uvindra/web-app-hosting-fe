@@ -1,16 +1,13 @@
-/** Web app scaling, configured per environment. Scale-to-zero is the default method for web apps. */
+/**
+ * Web app scaling, configured per environment. Scale-to-zero is deliberately not offered: it needs KEDA on
+ * the WSO2 Cloud data plane, which is deferred (see ADAPTATION_NOTES.md).
+ */
 
 export const ScalingMethod = {
-  ScaleToZero: 'ScaleToZero',
   HPA: 'HPA',
   None: 'None',
 } as const;
 export type ScalingMethod = (typeof ScalingMethod)[keyof typeof ScalingMethod];
-
-export interface ScaleToZeroSettings {
-  maxReplicas: number;
-  targetPendingRequests: number;
-}
 
 export interface HpaSettings {
   minReplicas: number;
@@ -23,7 +20,6 @@ export interface HpaSettings {
 
 export interface ScalingConfig {
   method: ScalingMethod;
-  scaleToZero: ScaleToZeroSettings;
   hpa: HpaSettings;
   /** Used when method is None. */
   fixedReplicas: number;

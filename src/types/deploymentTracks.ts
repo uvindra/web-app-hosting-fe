@@ -1,6 +1,6 @@
+/** A deployment track builds and deploys a web app from one branch of its Git repository; the branch is its identity. */
 export interface DeploymentTrack {
   id: string;
-  name: string;
   branch: string;
   /** The default (main) track cannot be deleted. */
   isDefault: boolean;
@@ -11,7 +11,7 @@ export interface DeploymentTrack {
 }
 
 export interface CreateDeploymentTrackInput {
-  name: string;
+  /** An existing branch of the web app's repository that has no track yet. */
   branch: string;
 }
 

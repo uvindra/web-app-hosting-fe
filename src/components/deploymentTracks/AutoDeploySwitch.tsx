@@ -16,7 +16,7 @@ export default function AutoDeploySwitch({ webAppId, track, onError }: AutoDeplo
       size="small"
       checked={track.autoDeploy}
       disabled={update.isPending}
-      slotProps={{ input: { 'aria-label': `Auto deploy ${track.name}` } }}
+      slotProps={{ input: { 'aria-label': `Auto deploy ${track.branch}` } }}
       onChange={(e) => update.mutate({ trackId: track.id, autoDeploy: e.target.checked }, { onError: (err) => onError(err instanceof Error ? err.message : 'Failed to update auto deploy.') })}
     />
   );

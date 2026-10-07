@@ -1,11 +1,11 @@
-export type MetricsRange = '30m' | '1h' | '6h' | '24h' | '7d';
+/** Capped at 24h: Prometheus on the WSO2 Cloud observability plane keeps metrics for 3 days by default. */
+export type MetricsRange = '30m' | '1h' | '6h' | '24h';
 
 export const METRICS_RANGES: { value: MetricsRange; label: string }[] = [
   { value: '30m', label: 'Last 30 minutes' },
   { value: '1h', label: 'Last hour' },
   { value: '6h', label: 'Last 6 hours' },
   { value: '24h', label: 'Last 24 hours' },
-  { value: '7d', label: 'Last 7 days' },
 ];
 
 export const METRICS_REFRESH_INTERVALS: { value: number; label: string }[] = [

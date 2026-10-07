@@ -1,9 +1,9 @@
 import type { ReplicaPod, ScalingConfig } from '../types/scaling';
 import type { EnvironmentId } from '../types/webApp';
 
+/** No autoscaling with a single replica, matching the OpenChoreo web-application default of 1 replica. */
 export const DEFAULT_SCALING: ScalingConfig = {
-  method: 'ScaleToZero',
-  scaleToZero: { maxReplicas: 3, targetPendingRequests: 100 },
+  method: 'None',
   hpa: { minReplicas: 1, maxReplicas: 3, cpuUtilization: 50 },
   fixedReplicas: 1,
 };
@@ -24,7 +24,7 @@ const MINUTES = 60 * 1000;
 export function mockReplicas(webAppId: string, environment: EnvironmentId, deployed: boolean, config: ScalingConfig): ReplicaPod[] {
   if (!deployed) return [];
   const suffix = webAppId.replace(/^webapp-/, '');
-  const count = config.method === 'None' ? config.fixedReplicas : config.method === 'HPA' ? config.hpa.minReplicas : 1;
+  const count = config.method === 'HPA' ? config.hpa.minReplicas : config.fixedReplicas;
   const now = Date.now();
   return Array.from({ length: count }, (_, i) => ({
     name: `${suffix}-${environment === 'development' ? 'dev' : 'prod'}-7c9d8b6f54-${['x4k2p', 'q9w7m', 'b5t8n', 'h2v6z', 'r3c1j'][i % 5]}`,

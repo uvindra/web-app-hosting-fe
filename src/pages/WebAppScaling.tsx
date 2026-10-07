@@ -5,7 +5,6 @@ import EnvironmentSelect from '../components/webapp/EnvironmentSelect';
 import ScalingEditor from '../components/scaling/ScalingEditor';
 import ReplicasTable from '../components/scaling/ReplicasTable';
 import { useScaling, useUpdateScaling } from '../hooks/useScaling';
-import { ScalingMethod } from '../types/scaling';
 import type { EnvironmentId } from '../types/webApp';
 
 interface Notice {
@@ -53,7 +52,7 @@ function ScalingBody({ webAppId, environment }: { webAppId: string; environment:
           })
         }
       />
-      <ReplicasTable webAppId={webAppId} environment={environment} scalesToZero={scaling.method === ScalingMethod.ScaleToZero} />
+      <ReplicasTable webAppId={webAppId} environment={environment} />
       <Snackbar open={notice !== null} autoHideDuration={4000} onClose={() => setNotice(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
         {notice ? (
           <Alert severity={notice.severity} onClose={() => setNotice(null)} variant="filled">
