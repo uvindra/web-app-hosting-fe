@@ -101,6 +101,15 @@ export function webAppUrlSettingsUrl(org: string, project: string, webApp: strin
   return `${webAppBase(org, project, webApp)}/settings/url-settings`;
 }
 
+/** Query parameter that selects a web app's deployment track on every web-app page. */
+export const TRACK_PARAM = 'track';
+
+/** Appends the selected track to a web-app page URL (omitted for the default track). */
+export function withTrack(url: string, trackId: string | null | undefined): string {
+  if (!trackId) return url;
+  return `${url}?${new URLSearchParams({ [TRACK_PARAM]: trackId }).toString()}`;
+}
+
 // ---------------------------------------------------------------------------
 // External links
 // ---------------------------------------------------------------------------

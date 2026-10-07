@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseDotEnv, validateForm, validateKey, validateName } from './configForm';
+import { formToWrite, parseDotEnv, validateForm, validateKey, validateName } from './configForm';
 
 describe('configForm', () => {
   it('validates names', () => {
@@ -24,6 +24,7 @@ describe('configForm', () => {
       {
         name: 'a',
         kind: 'secret',
+        mountPath: '',
         entries: [
           { key: 'K', value: '', masked: true },
           { key: 'K', value: 'v' },
@@ -33,5 +34,12 @@ describe('configForm', () => {
       true,
     );
     expect(errs).toEqual(["Duplicate key 'K'.", "Value for 'J' is required."]);
+  });
+  it('validates a file config (e.g. SPA config.js)', () => {
+    const ok = { name: 'runtime-config', kind: 'file' as const, mountPath: '/usr/share/nginx/html', entries: [{ key: 'config.js', value: 'window.configs = {};' }] };
+    expect(validateForm(ok, false)).toEqual([]);
+    expect(formToWrite(ok)).toEqual({ name: 'runtime-config', kind: 'file', mountPath: '/usr/share/nginx/html', entries: [{ key: 'config.js', value: 'window.configs = {};' }] });
+    expect(validateForm({ ...ok, mountPath: 'relative' }, false)).toHaveLength(1);
+    expect(validateForm({ ...ok, entries: [{ key: 'bad name', value: '' }] }, false)).toHaveLength(1);
   });
 });

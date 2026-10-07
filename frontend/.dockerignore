@@ -1,0 +1,40 @@
+# Build artifacts and caches we'll regenerate inside the image
+node_modules
+dist
+.vite
+.cache
+.turbo
+coverage
+stats.html
+**/coverage
+**/stats.html
+
+# VCS
+.git
+.gitignore
+
+# Editor/IDE
+.idea
+.vscode
+*.swp
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Docs not needed at runtime
+*.md
+
+# The Dockerfiles themselves don't need to be in the build context's COPY
+.dockerignore
+Dockerfile
+
+# Secrets and live sessions must never enter a build context
+.env.test
+.env.local
+.auth
+playwright-report
+test-results
+blob-report

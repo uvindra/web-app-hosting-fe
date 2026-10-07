@@ -5,10 +5,11 @@ import { useUpdateContainer } from '../../hooks/useContainers';
 import { CPU_MAX, CPU_MIN, CPU_STEP, MEMORY_MAX, MEMORY_MIN, MEMORY_STEP, containerToForm, formToUpdate, isFormDirty, splitLines, validateForm } from './containerForm';
 import type { ImagePullPolicy, WebAppContainer } from '../../types/containers';
 import type { EnvironmentId } from '../../types/webApp';
+import type { TrackRef } from '../../types/track';
 
 interface ContainerEditFormProps {
   container: WebAppContainer;
-  webAppId: string;
+  track: TrackRef;
   environment: EnvironmentId;
   onClose: () => void;
   onSaved: (message: string) => void;
@@ -54,9 +55,9 @@ function RangeSlider({ label, unit, min, max, step, request, limit, onChange }: 
   );
 }
 
-export default function ContainerEditForm({ container, webAppId, environment, onClose, onSaved, onError }: ContainerEditFormProps): JSX.Element {
+export default function ContainerEditForm({ container, track, environment, onClose, onSaved, onError }: ContainerEditFormProps): JSX.Element {
   const [form, setForm] = useState(() => containerToForm(container));
-  const update = useUpdateContainer(webAppId, environment);
+  const update = useUpdateContainer(track, environment);
   const errors = validateForm(form);
   const dirty = isFormDirty(form, container);
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]): void => setForm((prev) => ({ ...prev, [key]: value }));
@@ -96,8 +97,9 @@ export default function ContainerEditForm({ container, webAppId, environment, on
       </RadioGroup>
 
       <Stack gap={2} sx={{ mb: 2 }}>
-        <TextField label="Command" helperText="One entry per line" multiline minRows={2} value={form.command} onChange={(e) => set('command', e.target.value)} fullWidth />
-        <TextField label="Arguments" helperText="One entry per line" multiline minRows={2} value={form.args} onChange={(e) => set('args', e.target.value)} fullWidth />
+        {/* Command/arguments come from the build's workload; per-environment overrides are coming soon. */}
+        <TextField label="Command" helperText="Set by the build (editing is coming soon)" multiline minRows={2} value={form.command} disabled fullWidth />
+        <TextField label="Arguments" helperText="Set by the build (editing is coming soon)" multiline minRows={2} value={form.args} disabled fullWidth />
       </Stack>
       {splitLines(form.command).length + splitLines(form.args).length === 0 && (
         <Alert severity="info" sx={{ mb: 2 }}>

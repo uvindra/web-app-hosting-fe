@@ -5,16 +5,17 @@ import { usePodEvents } from '../../hooks/useRuntime';
 import { formatRelativeTime } from '../../utils/formatRelativeTime';
 import type { Pod } from '../../types/runtime';
 import type { EnvironmentId } from '../../types/webApp';
+import type { TrackRef } from '../../types/track';
 
 interface PodEventsDrawerProps {
-  webAppId: string;
+  track: TrackRef;
   environment: EnvironmentId;
   pod: Pod;
   onClose: () => void;
 }
 
-export default function PodEventsDrawer({ webAppId, environment, pod, onClose }: PodEventsDrawerProps): JSX.Element {
-  const { data, isLoading, isError } = usePodEvents(webAppId, environment, pod.name);
+export default function PodEventsDrawer({ track, environment, pod, onClose }: PodEventsDrawerProps): JSX.Element {
+  const { data, isLoading, isError } = usePodEvents(track, environment, pod.name);
 
   if (isLoading) {
     return (

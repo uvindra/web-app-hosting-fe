@@ -1,18 +1,16 @@
-import { useState, type JSX } from 'react';
+import type { JSX } from 'react';
 import WebAppPage from '../components/webapp/WebAppPage';
-import EnvironmentSelect from '../components/webapp/EnvironmentSelect';
 import DeployedGate from '../components/runtime/DeployedGate';
 import ConfigList from '../components/configs/ConfigList';
-import type { EnvironmentId } from '../types/webApp';
+import { isSpaPreset } from '../constants/buildPresets';
 
 export default function WebAppConfigs(): JSX.Element {
-  const [env, setEnv] = useState<EnvironmentId>('development');
   return (
-    <WebAppPage title="Configs & Secrets" description="Environment variables and secrets injected into the web app." actions={<EnvironmentSelect value={env} onChange={setEnv} />}>
-      {({ webApp }) => (
-        <DeployedGate webAppId={webApp.id} environment={env}>
+    <WebAppPage title="Configs & Secrets" description="Environment variables, secrets and mounted files (e.g. a SPA config.js) per environment." withEnvironment>
+      {({ track, environment, environmentName, webApp }) => (
+        <DeployedGate track={track} environment={environment} environmentName={environmentName}>
           {/* key drops any open editor/notice when the environment changes */}
-          <ConfigList key={env} webAppId={webApp.id} environment={env} />
+          <ConfigList key={`${track.trackId}:${environment}`} track={track} environment={environment} isSpa={isSpaPreset(webApp.buildPreset)} />
         </DeployedGate>
       )}
     </WebAppPage>

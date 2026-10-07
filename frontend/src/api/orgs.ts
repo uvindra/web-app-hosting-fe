@@ -1,12 +1,14 @@
 import type { Org } from '../types/org';
-import { MOCK_ORGS } from '../mock-data/orgs';
+import { getOrgFromToken } from '../auth/tokenManager';
 
-// STUB — the Web App Hosting backend doesn't exist yet. Swap the body for a
-// `webAppHostingClient.get<Org[]>('/orgs')` call once it does; the signature won't change.
-const NETWORK_DELAY_MS = 200;
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
+/**
+ * The signed-in user's organization comes straight from the access token's claims
+ * (`ouHandle` / `organization.handle`), falling back to the configured `ORG_HANDLE`
+ * (local OpenChoreo tokens carry no org claims). There is no org list to fetch.
+ */
 export async function fetchOrgs(): Promise<Org[]> {
-  await delay(NETWORK_DELAY_MS);
-  return MOCK_ORGS;
+  const org = getOrgFromToken();
+  const handle = org.handle ?? window.API_CONFIG.orgHandle;
+  if (!handle) return [];
+  return [{ handle, numericId: 0, displayName: org.name ?? handle, planLabel: '' }];
 }

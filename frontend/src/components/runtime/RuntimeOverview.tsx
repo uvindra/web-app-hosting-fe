@@ -5,9 +5,10 @@ import { useRedeploy } from '../../hooks/useRuntime';
 import { formatRelativeTime } from '../../utils/formatRelativeTime';
 import type { ReleaseDetails } from '../../types/runtime';
 import type { EnvironmentId } from '../../types/webApp';
+import type { TrackRef } from '../../types/track';
 
 interface RuntimeOverviewProps {
-  webAppId: string;
+  track: TrackRef;
   environment: EnvironmentId;
   release: ReleaseDetails;
 }
@@ -27,8 +28,8 @@ function Field({ label, value }: { label: string; value: string }): JSX.Element 
   );
 }
 
-export default function RuntimeOverview({ webAppId, environment, release }: RuntimeOverviewProps): JSX.Element {
-  const redeploy = useRedeploy(webAppId, environment);
+export default function RuntimeOverview({ track, environment, release }: RuntimeOverviewProps): JSX.Element {
+  const redeploy = useRedeploy(track, environment);
   const [done, setDone] = useState(false);
 
   const onRedeploy = (): void => {

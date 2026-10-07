@@ -1,0 +1,13 @@
+{
+  "VITE_WEBAPP_API_URL": "/__bff",
+  "ASGARDEO_CLIENT_ID": "web-app-hosting-console-local",
+  "ASGARDEO_AUTHORIZE_ENDPOINT": "http://thunder.openchoreo.localhost:8080/oauth2/authorize",
+  "ASGARDEO_TOKEN_ENDPOINT": "/__thunder/oauth2/token",
+  "ASGARDEO_REVOKE_ENDPOINT": "",
+  "ASGARDEO_SCOPE": "openid profile email groups",
+  "ORG_HANDLE": "default",
+  "BILLING_API_BASE_URL": "",
+  "BILLING_CONSOLE_URL": "",
+  "GITHUB_APP_CLIENT_ID": "",
+  "GITHUB_APP_SLUG": ""
+}

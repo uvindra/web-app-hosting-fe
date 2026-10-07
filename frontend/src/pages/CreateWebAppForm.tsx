@@ -6,8 +6,10 @@ import EmptyListing from '../components/EmptyListing';
 import WebAppCreationLoader from '../components/WebAppCreationLoader';
 import { useProjectByHandler } from '../hooks/useProjects';
 import { useCreateWebApp } from '../hooks/useWebApps';
+import { useBranches, useGitHubInstallations, useGitHubRepos } from '../hooks/useGit';
 import { hasProject, useScope } from '../nav';
 import { gitProviderBase, importWebAppUrl, newWebAppUrl, webAppOverviewUrl } from '../paths';
+import { isSpaPreset } from '../constants/buildPresets';
 import { toHandler } from '../utils/toHandler';
 import { parseGitHubUrl } from '../utils/parseGitHubUrl';
 import type { BuildPreset, CreateWebAppDockerInput, CreateWebAppGitInput, WebAppSourceType } from '../types/webApp';
@@ -121,6 +123,17 @@ export default function CreateWebAppForm(): JSX.Element {
 
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  // GitHub App: installations bound to the org → their repositories → the chosen repo's branches.
+  const installations = useGitHubInstallations(isAuthenticatedGitHub);
+  const [installationId, setInstallationId] = useState<number | undefined>();
+  const effectiveInstallationId = installationId ?? installations.data?.[0]?.installationId;
+  const repos = useGitHubRepos(isAuthenticatedGitHub ? effectiveInstallationId : undefined);
+  const parsedPublic = parseGitHubUrl(repoUrl);
+  const branchQuery = isAuthenticatedGitHub
+    ? { installationId: effectiveInstallationId, owner: gitOrganization, repo: repository }
+    : { repoUrl: parsedPublic ? `https://github.com/${parsedPublic.organization}/${parsedPublic.repository}` : '' };
+  const branches = useBranches(branchQuery, isAuthenticatedGitHub ? !!effectiveInstallationId && !!gitOrganization && !!repository : !!parsedPublic);
+
   const effectiveHandler = handlerEdited ? handler : toHandler(displayName);
   const handlerError = !effectiveHandler ? null : !HANDLER_RE.test(effectiveHandler) ? 'Use lowercase letters, numbers and hyphens only' : null;
   const portNumber = Number(port);
@@ -162,7 +175,7 @@ export default function CreateWebAppForm(): JSX.Element {
         <WebAppCreationLoader
           isPending={createWebApp.isPending}
           isSuccess={createWebApp.isSuccess}
-          error={createWebApp.isError ? (createWebApp.error?.message ?? 'Something went wrong. Please try again.') : null}
+          error={createWebApp.isError ? createWebApp.error : null}
           onBack={() => createWebApp.reset()}
         />
       </PageContent>
@@ -187,6 +200,7 @@ export default function CreateWebAppForm(): JSX.Element {
         : {
             sourceType: sourceType === 'github' ? 'github' : 'public-git',
             gitOrganization: gitOrganization.trim() || undefined,
+            installationId: isAuthenticatedGitHub ? effectiveInstallationId : undefined,
             repository: repository.trim(),
             branch: branch.trim() || 'main',
             componentDirectory: componentDirectory.trim() || '/',
@@ -233,11 +247,46 @@ export default function CreateWebAppForm(): JSX.Element {
           <Grid container spacing={3} sx={{ mb: 4 }}>
             {isAuthenticatedGitHub ? (
               <>
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <TextField label="GitHub Organization" required placeholder="e.g. my-org" value={gitOrganization} onChange={(e) => setGitOrganization(e.target.value)} fullWidth helperText="GitHub organization" />
-                </Grid>
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <TextField label="Repository" required placeholder="e.g. my-web-app" value={repository} onChange={(e) => setRepository(e.target.value)} fullWidth helperText="Select repository" />
+                {(installations.data?.length ?? 0) > 1 && (
+                  <Grid size={{ xs: 12 }}>
+                    <Select fullWidth value={effectiveInstallationId ?? ''} onChange={(e) => setInstallationId(Number(e.target.value))} inputProps={{ 'aria-label': 'GitHub installation' }}>
+                      {(installations.data ?? []).map((i) => (
+                        <MenuItem key={i.installationId} value={i.installationId}>
+                          {i.githubAccount ?? `Installation ${i.installationId}`}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </Grid>
+                )}
+                <Grid size={{ xs: 12 }}>
+                  {installations.isLoading || repos.isLoading ? (
+                    <CircularProgress size={20} />
+                  ) : installations.isError || repos.isError ? (
+                    <Alert severity="error">Failed to load your GitHub repositories.</Alert>
+                  ) : (
+                    <Select
+                      fullWidth
+                      displayEmpty
+                      value={gitOrganization && repository ? `${gitOrganization}/${repository}` : ''}
+                      onChange={(e) => {
+                        const repo = (repos.data ?? []).find((r) => r.fullName === e.target.value);
+                        if (!repo) return;
+                        setGitOrganization(repo.owner);
+                        setRepository(repo.name);
+                        setBranch(repo.defaultBranch || 'main');
+                      }}
+                      inputProps={{ 'aria-label': 'Repository' }}>
+                      <MenuItem value="" disabled>
+                        Select repository
+                      </MenuItem>
+                      {(repos.data ?? []).map((r) => (
+                        <MenuItem key={r.fullName} value={r.fullName}>
+                          {r.fullName}
+                          {r.private ? ' (private)' : ''}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  )}
                 </Grid>
               </>
             ) : (
@@ -246,7 +295,17 @@ export default function CreateWebAppForm(): JSX.Element {
               </Grid>
             )}
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField label="Branch" value={branch} onChange={(e) => setBranch(e.target.value)} fullWidth helperText="Select branch" />
+              {branches.data && branches.data.length > 0 ? (
+                <Select fullWidth value={branches.data.includes(branch) ? branch : ''} onChange={(e) => setBranch(String(e.target.value))} inputProps={{ 'aria-label': 'Branch' }}>
+                  {branches.data.map((b) => (
+                    <MenuItem key={b} value={b}>
+                      {b}
+                    </MenuItem>
+                  ))}
+                </Select>
+              ) : (
+                <TextField label="Branch" value={branch} onChange={(e) => setBranch(e.target.value)} fullWidth helperText={branches.isError ? 'Could not list branches — enter one' : 'Branch'} />
+              )}
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField label="Component Directory" value={componentDirectory} onChange={(e) => setComponentDirectory(e.target.value)} fullWidth helperText="Path (/ for root)" />
@@ -361,7 +420,16 @@ export default function CreateWebAppForm(): JSX.Element {
 
       <Grid container spacing={3} sx={{ mb: 5 }}>
         <Grid size={{ xs: 12, md: 4 }}>
-          <TextField label="Port" type="number" value={port} onChange={(e) => setPort(e.target.value)} fullWidth error={!portValid && port !== ''} helperText={!portValid && port !== '' ? 'Enter a valid port (1-65535)' : undefined} />
+          <TextField
+            label="Port"
+            type="number"
+            value={isSpaPreset(buildPreset) && !isDocker ? '8080' : port}
+            onChange={(e) => setPort(e.target.value)}
+            disabled={isSpaPreset(buildPreset) && !isDocker}
+            fullWidth
+            error={!portValid && port !== ''}
+            helperText={isSpaPreset(buildPreset) && !isDocker ? 'Single-page and static apps are served by nginx on port 8080.' : !portValid && port !== '' ? 'Enter a valid port (1-65535)' : 'Port your app listens on'}
+          />
         </Grid>
       </Grid>
 

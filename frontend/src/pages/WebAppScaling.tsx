@@ -1,20 +1,21 @@
 import { useState, type JSX } from 'react';
 import { Alert, Box, Button, CircularProgress, Snackbar, Stack } from '@wso2/oxygen-ui';
 import WebAppPage from '../components/webapp/WebAppPage';
-import EnvironmentSelect from '../components/webapp/EnvironmentSelect';
 import ScalingEditor from '../components/scaling/ScalingEditor';
 import ReplicasTable from '../components/scaling/ReplicasTable';
+import DeployedGate from '../components/runtime/DeployedGate';
 import { useScaling, useUpdateScaling } from '../hooks/useScaling';
 import type { EnvironmentId } from '../types/webApp';
+import type { TrackRef } from '../types/track';
 
 interface Notice {
   severity: 'success' | 'error';
   message: string;
 }
 
-function ScalingBody({ webAppId, environment }: { webAppId: string; environment: EnvironmentId }): JSX.Element {
-  const { data: scaling, isLoading, isError, refetch } = useScaling(webAppId, environment);
-  const update = useUpdateScaling(webAppId, environment);
+function ScalingBody({ track, environment }: { track: TrackRef; environment: EnvironmentId }): JSX.Element {
+  const { data: scaling, isLoading, isError, refetch } = useScaling(track, environment);
+  const update = useUpdateScaling(track, environment);
   const [notice, setNotice] = useState<Notice | null>(null);
 
   if (isLoading) {
@@ -52,7 +53,7 @@ function ScalingBody({ webAppId, environment }: { webAppId: string; environment:
           })
         }
       />
-      <ReplicasTable webAppId={webAppId} environment={environment} />
+      <ReplicasTable track={track} environment={environment} />
       <Snackbar open={notice !== null} autoHideDuration={4000} onClose={() => setNotice(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
         {notice ? (
           <Alert severity={notice.severity} onClose={() => setNotice(null)} variant="filled">
@@ -65,10 +66,13 @@ function ScalingBody({ webAppId, environment }: { webAppId: string; environment:
 }
 
 export default function WebAppScaling(): JSX.Element {
-  const [environment, setEnvironment] = useState<EnvironmentId>('development');
   return (
-    <WebAppPage title="Scaling" description="Control how your web app scales with traffic." actions={<EnvironmentSelect value={environment} onChange={setEnvironment} />}>
-      {({ webApp }) => <ScalingBody webAppId={webApp.id} environment={environment} />}
+    <WebAppPage title="Scaling" description="Set how many replicas run in each environment. Autoscaling (HPA) is coming soon." withEnvironment>
+      {({ track, environment, environmentName }) => (
+        <DeployedGate track={track} environment={environment} environmentName={environmentName}>
+          <ScalingBody key={`${track.trackId}:${environment}`} track={track} environment={environment} />
+        </DeployedGate>
+      )}
     </WebAppPage>
   );
 }

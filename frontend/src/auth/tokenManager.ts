@@ -1,5 +1,3 @@
-import { revokeTokenApiUrl } from '../config/runtimeConfig';
-
 const ACCESS_TOKEN_KEY = 'auth_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
 const TOKEN_EXPIRES_AT_KEY = 'token_expires_at';
@@ -163,17 +161,14 @@ export function clearOidcAuthMetadata(): void {
   localStorage.removeItem(OIDC_ORG_HANDLE_KEY);
 }
 
-// Refreshes the WSO2 Identity Platform token and, when STS is configured, re-exchanges it for an
-// org-scoped token. When STS is not configured the raw Asgardeo token is used directly — the org
-// context then comes straight from its JWT claims (see getOrgUuidFromToken below).
+// Refreshes the Platform IdP (ThunderID) token. WSO2 Cloud has no STS: the org context comes
+// straight from the access token's JWT claims (see getOrgFromToken below), as in ICP cloud.
 async function refreshOidcAccessToken(refreshToken: string): Promise<void> {
-  const { stsTokenEndpoint, stsClientId, stsScope } = window.API_CONFIG;
-
   let tokenData: AsgardeoTokenData | null;
   try {
     tokenData = await doAsgardeoRefresh();
   } catch {
-    // Definitive auth failure (401/403 from WSO2 Identity Platform)
+    // Definitive auth failure (401/403 / invalid_grant from the IdP)
     clearTokens();
     onAuthFailure?.();
     return;
@@ -182,45 +177,7 @@ async function refreshOidcAccessToken(refreshToken: string): Promise<void> {
     // Transient failure — don't kill the session
     return;
   }
-
-  const newRefreshToken = tokenData.refresh_token ?? refreshToken;
-
-  if (!stsTokenEndpoint || !stsClientId) {
-    saveTokens({ token: tokenData.access_token, expiresIn: tokenData.expires_in ?? 3600, refreshToken: newRefreshToken, refreshTokenExpiresIn: 86400 });
-    return;
-  }
-
-  try {
-    const orgHandle = localStorage.getItem(OIDC_ORG_HANDLE_KEY) ?? undefined;
-    const stsParams: Record<string, string> = {
-      grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
-      client_id: stsClientId,
-      subject_token: tokenData.access_token,
-      subject_token_type: 'urn:ietf:params:oauth:token-type:jwt',
-      requested_token_type: 'urn:ietf:params:oauth:token-type:jwt',
-      ...(stsScope ? { scope: stsScope } : {}),
-      ...(orgHandle ? { orgHandle } : {}),
-    };
-
-    const stsRes = await fetch(stsTokenEndpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams(stsParams).toString(),
-    });
-
-    if (!stsRes.ok) {
-      if (stsRes.status === 401 || stsRes.status === 403 || (stsRes.status === 400 && (await isInvalidGrant(stsRes)))) {
-        clearTokens();
-        onAuthFailure?.();
-      }
-      return;
-    }
-
-    const stsData: { access_token: string; expires_in?: number } = await stsRes.json();
-    saveTokens({ token: stsData.access_token, expiresIn: stsData.expires_in ?? 3600, refreshToken: newRefreshToken, refreshTokenExpiresIn: 86400 });
-  } catch {
-    // Network/transient STS error — don't kill the session
-  }
+  saveTokens({ token: tokenData.access_token, expiresIn: tokenData.expires_in ?? 3600, refreshToken: tokenData.refresh_token ?? refreshToken, refreshTokenExpiresIn: 86400 });
 }
 
 export async function refreshAccessToken(): Promise<void> {
@@ -270,54 +227,16 @@ export async function authenticatedFetch(url: string, options: RequestInit = {})
   return res;
 }
 
-export async function switchOrgToken(orgHandle: string, signal?: AbortSignal): Promise<void> {
-  const currentToken = getAccessToken();
-  const { stsTokenEndpoint, stsClientId, stsScope } = window.API_CONFIG;
-  // Callers treat a resolved promise as "the token is now scoped to `orgHandle`" — silently
-  // resolving here (as this used to) would make that true when nothing was actually persisted.
-  if (!currentToken || !stsTokenEndpoint || !stsClientId) {
-    throw new Error('Org token exchange unavailable: missing auth token or STS configuration');
-  }
-
-  const res = await fetch(stsTokenEndpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
-      client_id: stsClientId,
-      subject_token: currentToken,
-      subject_token_type: 'urn:ietf:params:oauth:token-type:jwt',
-      requested_token_type: 'urn:ietf:params:oauth:token-type:jwt',
-      ...(stsScope ? { scope: stsScope } : {}),
-      orgHandle,
-    }).toString(),
-    // Lets a caller cancel this exchange if it's been superseded by a newer one before it
-    // resolves — otherwise, whichever request resolves last wins and persists its (possibly
-    // stale) token/org_handle regardless of request order.
-    signal,
-  });
-
-  if (!res.ok) throw new Error(`Org token exchange failed (${res.status})`);
-
-  const data: { access_token: string; expires_in?: number } = await res.json();
-  localStorage.setItem(OIDC_ORG_HANDLE_KEY, orgHandle);
-  saveTokens({
-    token: data.access_token,
-    expiresIn: data.expires_in ?? 3600,
-    refreshToken: getRefreshToken() ?? '',
-    refreshTokenExpiresIn: 86400,
-  });
-}
-
+/** Best-effort RFC 7009 revocation of the refresh token at the IdP (skipped when no revoke endpoint is configured). */
 export async function revokeToken(): Promise<void> {
   try {
-    const token = getAccessToken();
     const refreshToken = getRefreshToken();
-    if (!token) return;
-    await fetch(revokeTokenApiUrl(), {
+    const { asgardeoRevokeEndpoint, asgardeoClientId } = window.API_CONFIG;
+    if (!refreshToken || !asgardeoRevokeEndpoint) return;
+    await fetch(asgardeoRevokeEndpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ refreshToken }),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token: refreshToken, token_type_hint: 'refresh_token', client_id: asgardeoClientId }).toString(),
     });
   } catch {
     // best-effort — ignore errors
@@ -398,6 +317,29 @@ export function getAndClearCodeVerifier(): string | null {
   const v = sessionStorage.getItem(CODE_VERIFIER_KEY);
   sessionStorage.removeItem(CODE_VERIFIER_KEY);
   return v;
+}
+
+function tokenClaims(): Record<string, unknown> | null {
+  const token = getAccessToken();
+  if (!token) return null;
+  try {
+    const normalized = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+    return JSON.parse(atob(padded)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+/** Org handle / name from the access token's claims (`ouHandle` / `organization.handle`); empty for local OpenChoreo tokens. */
+export function getOrgFromToken(): { handle?: string; name?: string } {
+  const payload = tokenClaims();
+  if (!payload) return {};
+  const org = (payload.organization as Record<string, unknown> | undefined) ?? {};
+  return {
+    handle: (org.handle as string | undefined) ?? (payload.ouHandle as string | undefined),
+    name: (org.name as string | undefined) ?? (payload.ouName as string | undefined),
+  };
 }
 
 /**

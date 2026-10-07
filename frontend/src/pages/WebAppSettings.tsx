@@ -9,7 +9,7 @@ export default function WebAppSettings(): JSX.Element {
   const { pathname } = useLocation();
 
   return (
-    <WebAppPage title="Settings">
+    <WebAppPage title="Settings" hideTrackSelect>
       {(ctx) => {
         const { org, project, webApp } = ctx.scope;
         const tabs = [

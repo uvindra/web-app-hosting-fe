@@ -27,7 +27,7 @@ export default function ScalingEditor({ saved, isSaving, onSave }: ScalingEditor
       </Typography>
       <Stack direction={{ xs: 'column', md: 'row' }} gap={2} sx={{ mb: 3 }}>
         {SCALING_METHODS.map((m) => (
-          <ScaleMethodCard key={m.value} title={m.title} description={m.description} badge={m.badge} selected={draft.method === m.value} onSelect={() => setDraft({ ...draft, method: m.value })} />
+          <ScaleMethodCard key={m.value} title={m.title} description={m.description} badge={m.badge} disabled={m.comingSoon} selected={draft.method === m.value} onSelect={() => setDraft({ ...draft, method: m.value })} />
         ))}
       </Stack>
 

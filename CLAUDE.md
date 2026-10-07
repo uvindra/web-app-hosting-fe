@@ -14,7 +14,7 @@ product front end) — cloning only what's generic, not anything integration/Bal
 | Path | Contents |
 |---|---|
 | `frontend/` | The React app: `package.json`, `src/`, `public/`, configs. |
-| `backend/` | The Web App Hosting BFF (Go). Empty until P0 lands. |
+| `backend/` | The Web App Hosting BFF (Go): `cmd/webapp-service`, contract `api/openapi.yaml`. Gates: `go build ./... && go vet ./... && go test ./...`. |
 | Root | Shared docs: this file, `ADAPTATION_NOTES.md`. |
 
 - Unless stated otherwise, every `src/...`, `public/...` and config path in this file and in `ADAPTATION_NOTES.md` is relative to `frontend/`.
@@ -70,12 +70,16 @@ a `hooks/` TanStack Query wrapper.
 - `src/contexts/AccessControlContext.tsx` / `src/components/Authorized.tsx` — **always-allow
   stub**, no real permission model exists yet.
 
-## Everything backend-related is stubbed
+## Backend (BFF) and what is still stubbed
 
-The Web App Hosting backend doesn't exist yet. Don't try to point `src/api/*.ts` at a real
-endpoint unless you've confirmed one exists — check `ADAPTATION_NOTES.md`'s "Backend doesn't
-exist yet" note first. When a real backend does land, replace one `src/api/*.ts` file's body at
-a time; the `src/hooks/*.ts` layer above it shouldn't need to change.
+`src/api/*.ts` call the BFF in `backend/` (see `ADAPTATION_NOTES.md` → "Backend"). Health checks,
+metrics and custom domains are still stubs and their pages show "Coming soon". When the BFF grows an
+endpoint, add it to `backend/api/openapi.yaml` (a test keeps the router in sync), then replace the
+matching `src/api/*.ts` body; hooks only change for new parameters.
+
+Web-app pages are per **deployment track**: use the `track: TrackRef` and `environment` from
+`WebAppPage`'s render context (never `webApp.id` for track-scoped data), and build links with
+`paths.withTrack` so the selected track survives navigation.
 
 ## Conventions inherited from ipaas (still apply here)
 
@@ -93,8 +97,9 @@ a time; the `src/hooks/*.ts` layer above it shouldn't need to change.
 All commands below run from `frontend/`.
 
 - `pnpm dev` — dev server on `https://localhost:3000` (self-signed cert, one-time browser
-  warning). No real IdP is configured (`public/config.json`'s Asgardeo/GitHub values are
-  placeholders) — signing in for real won't work.
+  warning) with `public/config.json` (placeholders for the deployed console).
+- `pnpm dev:local` — the same against a local OpenChoreo on k3d (`public/config.local.json`; proxies the
+  local BFF and ThunderID). See the repo `README.md` for the full local setup.
 - `pnpm demo` — launches straight into a seeded fake session at `/dev-login` (dev-only route,
   stripped from production builds) so the app is demoable without a real IdP. See
   `src/pages/DevSeedSession.tsx` / `AuthContext.devLogin`.

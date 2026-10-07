@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import type { JSX } from 'react';
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
+import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   AppShell,
@@ -30,16 +30,17 @@ import {
 import { BarChart3, Boxes, ChevronDown, ChevronRight, Eye, Hammer, HeartPulse, KeyRound, LayoutDashboard, LogOut, Rocket, ScrollText, Search, Server, Settings, SlidersHorizontal } from '@wso2/oxygen-ui-icons-react';
 import { useAuth } from '../auth/AuthContext';
 import { useOrgs } from '../hooks/useOrgs';
+import { billingEnabled, planLabel, useBillingOrg } from '../hooks/useBilling';
 import { useProjects, useProjectByHandler } from '../hooks/useProjects';
 import { hasProject, hasWebApp, resolveWebAppNavId, useScope, webAppNavGroupOf, WEB_APP_NAV_LEAVES } from '../nav';
 import type { WebAppNavId } from '../nav';
-import { external, orgHomeUrl, projectHomeUrl } from '../paths';
-import { switchOrgToken } from '../auth/tokenManager';
+import { external, orgHomeUrl, projectHomeUrl, TRACK_PARAM, withTrack } from '../paths';
 
 export default function AppLayout(): JSX.Element {
   const navigate = useNavigate();
   const scope = useScope();
   const { pathname } = useLocation();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { displayName, username, logout } = useAuth();
 
@@ -62,6 +63,9 @@ export default function AppLayout(): JSX.Element {
   const projectCardRef = useRef<HTMLDivElement>(null);
 
   const { data: orgsData = [] } = useOrgs();
+  // First-login billing activation (C10): activates the free plan, then feeds the plan badge.
+  const { data: billingOrg } = useBillingOrg(scope.org);
+  const plan = planLabel(billingOrg);
   const projectHandler = hasProject(scope) ? scope.project : '';
   const { data: project } = useProjectByHandler(scope.org, projectHandler);
   const { data: projects = [] } = useProjects(scope.org);
@@ -75,25 +79,20 @@ export default function AppLayout(): JSX.Element {
   const handleNavSelect = (id: string) => {
     if (hasWebApp(scope)) {
       const leaf = WEB_APP_NAV_LEAVES.find((l) => l.id === id);
-      if (leaf) navigate(leaf.url(scope));
+      // Keep the selected deployment track across web-app pages.
+      if (leaf) navigate(withTrack(leaf.url(scope), searchParams.get(TRACK_PARAM)));
       return;
     }
     navigate(hasProject(scope) ? projectHomeUrl(scope.org, scope.project) : orgHomeUrl(scope.org));
   };
 
+  // The org comes from the access token (one org per session; no STS org exchange), so switching
+  // only navigates. Clear the cache when the org actually changes.
   const handleSwitchOrg = (handle: string) => {
     setOrgMenuAnchor(null);
     setOrgSearch('');
-    if (handle === scope.org) {
-      navigate(orgHomeUrl(handle));
-      return;
-    }
-    switchOrgToken(handle)
-      .then(() => {
-        queryClient.clear();
-        navigate(orgHomeUrl(handle));
-      })
-      .catch(() => navigate(orgHomeUrl(handle)));
+    if (handle !== scope.org) queryClient.clear();
+    navigate(orgHomeUrl(handle));
   };
 
   return (
@@ -294,9 +293,17 @@ export default function AppLayout(): JSX.Element {
           </Header.Switchers>
           <Header.Spacer />
           <Header.Actions>
-            <Tooltip title="Free trial">
-              <Chip label={orgsData[0]?.planLabel ?? 'Trial'} color="warning" size="medium" sx={{ fontWeight: 500, mx: 0.75 }} />
-            </Tooltip>
+            {billingEnabled() && plan && (
+              <Tooltip title="Web App Hosting plan">
+                <Chip
+                  label={plan}
+                  color="warning"
+                  size="medium"
+                  sx={{ fontWeight: 500, mx: 0.75, cursor: window.API_CONFIG.billingConsoleUrl ? 'pointer' : 'default' }}
+                  onClick={window.API_CONFIG.billingConsoleUrl ? () => window.open(window.API_CONFIG.billingConsoleUrl, '_blank', 'noopener') : undefined}
+                />
+              </Tooltip>
+            )}
             <ColorSchemeToggle />
             <UserMenu>
               <UserMenu.Trigger name={displayName || username || 'User'} />

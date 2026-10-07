@@ -1,7 +1,8 @@
 import { useState, type JSX } from 'react';
-import { Alert, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, TextField } from '@wso2/oxygen-ui';
+import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Stack, TextField } from '@wso2/oxygen-ui';
 import { Plus } from '@wso2/oxygen-ui-icons-react';
 import { useCreateDeploymentTrack, useRepoBranches } from '../../hooks/useDeploymentTracks';
+import ErrorAlert from '../ErrorAlert';
 
 interface CreateTrackDialogProps {
   webAppId: string;
@@ -49,21 +50,21 @@ function BranchPicker({ webAppId, trackedBranches, value, onChange }: { webAppId
 export default function CreateTrackDialog({ webAppId, trackedBranches, onClose, onDone }: CreateTrackDialogProps): JSX.Element {
   const create = useCreateDeploymentTrack(webAppId);
   const [branch, setBranch] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   const handleCreate = () => {
     setError(null);
-    create.mutate({ branch }, { onSuccess: () => onDone(`Deployment track created for branch "${branch}".`), onError: (e) => setError(e instanceof Error ? e.message : 'Failed to create the deployment track.') });
+    create.mutate({ branch }, { onSuccess: () => onDone(`Deployment track created for branch "${branch}".`), onError: (e) => setError(e) });
   };
 
   return (
     <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
       <DialogTitle>Create Deployment Track</DialogTitle>
       <DialogContent>
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
+        {error !== null && (
+          <Box sx={{ mb: 2 }}>
+            <ErrorAlert error={error} fallback="Failed to create the deployment track." />
+          </Box>
         )}
         <Stack gap={2} sx={{ mt: 1 }}>
           <BranchPicker webAppId={webAppId} trackedBranches={trackedBranches} value={branch} onChange={setBranch} />

@@ -4,14 +4,15 @@ import { CircleCheck, Info, RefreshCw } from '@wso2/oxygen-ui-icons-react';
 import { useReplicas } from '../../hooks/useScaling';
 import { formatRelativeTime } from '../../utils/formatRelativeTime';
 import type { EnvironmentId } from '../../types/webApp';
+import type { TrackRef } from '../../types/track';
 
 interface ReplicasTableProps {
-  webAppId: string;
+  track: TrackRef;
   environment: EnvironmentId;
 }
 
-export default function ReplicasTable({ webAppId, environment }: ReplicasTableProps): JSX.Element {
-  const { data: pods, isLoading, isError, isFetching, refetch } = useReplicas(webAppId, environment);
+export default function ReplicasTable({ track, environment }: ReplicasTableProps): JSX.Element {
+  const { data: pods, isLoading, isError, isFetching, refetch } = useReplicas(track, environment);
 
   if (isLoading) {
     return (

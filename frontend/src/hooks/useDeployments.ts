@@ -2,31 +2,30 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { deployBuild, fetchDeployments, promoteDeployment, redeployDeployment, stopDeployment } from '../api/deployments';
 import type { DeployBuildInput, Deployment, PromoteInput } from '../types/deployment';
 import type { EnvironmentId } from '../types/webApp';
+import { trackKey, type TrackRef } from '../types/track';
+import { DEPLOY_POLL_ACTIVE_MS, DEPLOY_POLL_IDLE_MS } from './useBuilds';
 
-const ROLLOUT_POLL_MS = 1000;
-
-export function useDeployments(webAppId: string) {
+export function useDeployments(track: TrackRef) {
   return useQuery({
-    queryKey: ['deployments', webAppId],
-    queryFn: () => fetchDeployments(webAppId),
-    enabled: !!webAppId,
-    // Poll while a rollout is in flight so it flips to "active" without a manual refresh.
-    refetchInterval: (query) => (query.state.data?.some((d) => d.status === 'deploying') ? ROLLOUT_POLL_MS : false),
+    queryKey: ['deployments', ...trackKey(track)],
+    queryFn: () => fetchDeployments(track),
+    enabled: !!track.webAppId && !!track.trackId,
+    refetchInterval: (query) => (query.state.data?.some((d) => d.status === 'deploying') ? DEPLOY_POLL_ACTIVE_MS : DEPLOY_POLL_IDLE_MS),
   });
 }
 
-function useDeploymentMutation<TInput>(webAppId: string, fn: (webAppId: string, input: TInput) => Promise<Deployment>) {
+function useDeploymentMutation<TInput>(track: TrackRef, fn: (track: TrackRef, input: TInput) => Promise<Deployment>) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: TInput) => fn(webAppId, input),
+    mutationFn: (input: TInput) => fn(track, input),
     onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: ['deployments', webAppId] });
-      void queryClient.invalidateQueries({ queryKey: ['environments', webAppId] });
+      void queryClient.invalidateQueries({ queryKey: ['deployments', ...trackKey(track)] });
+      void queryClient.invalidateQueries({ queryKey: ['environments', ...trackKey(track)] });
     },
   });
 }
 
-export const useDeployBuild = (webAppId: string) => useDeploymentMutation<DeployBuildInput>(webAppId, deployBuild);
-export const usePromote = (webAppId: string) => useDeploymentMutation<PromoteInput>(webAppId, promoteDeployment);
-export const useRedeploy = (webAppId: string) => useDeploymentMutation<EnvironmentId>(webAppId, redeployDeployment);
-export const useStopDeployment = (webAppId: string) => useDeploymentMutation<EnvironmentId>(webAppId, stopDeployment);
+export const useDeployBuild = (track: TrackRef) => useDeploymentMutation<DeployBuildInput>(track, deployBuild);
+export const usePromote = (track: TrackRef) => useDeploymentMutation<PromoteInput>(track, promoteDeployment);
+export const useRedeploy = (track: TrackRef) => useDeploymentMutation<EnvironmentId>(track, redeployDeployment);
+export const useStopDeployment = (track: TrackRef) => useDeploymentMutation<EnvironmentId>(track, stopDeployment);

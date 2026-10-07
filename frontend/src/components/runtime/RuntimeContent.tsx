@@ -5,10 +5,11 @@ import ResourceUsageCards from './ResourceUsageCards';
 import PodInsightsTable from './PodInsightsTable';
 import { usePods, useReleaseDetails } from '../../hooks/useRuntime';
 import type { EnvironmentId } from '../../types/webApp';
+import type { TrackRef } from '../../types/track';
 
-export default function RuntimeContent({ webAppId, environment }: { webAppId: string; environment: EnvironmentId }): JSX.Element {
-  const release = useReleaseDetails(webAppId, environment);
-  const pods = usePods(webAppId, environment);
+export default function RuntimeContent({ track, environment }: { track: TrackRef; environment: EnvironmentId }): JSX.Element {
+  const release = useReleaseDetails(track, environment);
+  const pods = usePods(track, environment);
 
   if (release.isLoading || pods.isLoading) {
     return (
@@ -22,9 +23,9 @@ export default function RuntimeContent({ webAppId, environment }: { webAppId: st
   }
   return (
     <>
-      <RuntimeOverview webAppId={webAppId} environment={environment} release={release.data} />
+      <RuntimeOverview track={track} environment={environment} release={release.data} />
       <ResourceUsageCards pods={pods.data} />
-      <PodInsightsTable webAppId={webAppId} environment={environment} pods={pods.data} />
+      <PodInsightsTable track={track} environment={environment} pods={pods.data} />
     </>
   );
 }

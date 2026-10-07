@@ -101,9 +101,9 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
     });
   }, []);
 
-  // WSO2 Cloud's Thunder IdP issues a token whose org context is already carried in its JWT
-  // claims (root-level `ouHandle`, or nested `organization.handle`) — there is no separate
-  // org-discovery/STS-exchange round trip to perform first, unlike a plain Asgardeo tenant.
+  // WSO2 Cloud's Platform IdP (ThunderID) issues a token whose org context is already carried in
+  // its JWT claims (root-level `ouHandle`, or nested `organization.handle`) — there is no STS
+  // exchange (as in ICP cloud).
   const handleOIDCCallback = useCallback(async (code: string) => {
     const { asgardeoClientId, asgardeoTokenEndpoint, asgardeoSignInRedirectUrl } = window.API_CONFIG;
 
@@ -155,6 +155,8 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
       }
     }
 
+    // Local OpenChoreo tokens carry no org claims: fall back to the configured org (ORG_HANDLE).
+    orgHandle = orgHandle ?? (window.API_CONFIG.orgHandle || undefined);
     if (!orgHandle) {
       throw new Error('Missing organization context after sign-in. Please try logging in again.');
     }

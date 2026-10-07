@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createCustomDomain, deleteCustomDomain, fetchCustomDomains, fetchDefaultUrls, updateCustomDomain, verifyCustomDomain } from '../api/urlSettings';
 import type { CustomDomainInput } from '../types/urlSettings';
+import { trackKey, type TrackRef } from '../types/track';
 
 interface WebAppRef {
   id: string;
@@ -10,8 +11,8 @@ interface WebAppRef {
 
 const domainsKey = (webAppId: string) => ['customDomains', webAppId];
 
-export function useDefaultUrls(webApp: WebAppRef) {
-  return useQuery({ queryKey: ['defaultUrls', webApp.id], queryFn: () => fetchDefaultUrls(webApp), enabled: !!webApp.id });
+export function useDefaultUrls(track: TrackRef) {
+  return useQuery({ queryKey: ['defaultUrls', ...trackKey(track)], queryFn: () => fetchDefaultUrls(track), enabled: !!track.trackId });
 }
 
 export function useCustomDomains(webAppId: string) {

@@ -1,11 +1,13 @@
 import { useEffect, useState, type JSX } from 'react';
-import { Alert, Box, Button, CircularProgress, Typography } from '@wso2/oxygen-ui';
+import { Box, Button, CircularProgress, Typography } from '@wso2/oxygen-ui';
 import { CREATION_STEPS, CREATION_STEP_INTERVAL, type CreationStep } from '../constants/webAppCreation';
+import ErrorAlert from './ErrorAlert';
 
 interface WebAppCreationLoaderProps {
   isPending: boolean;
   isSuccess: boolean;
-  error?: string | null;
+  /** The create error, if any (a 402 renders the quota / upgrade message). */
+  error?: unknown;
   onBack?: () => void;
 }
 
@@ -27,9 +29,9 @@ export default function WebAppCreationLoader({ isPending, isSuccess, error, onBa
   if (error) {
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 3, py: 8 }}>
-        <Alert severity="error" sx={{ maxWidth: 480, width: '100%' }}>
-          {error}
-        </Alert>
+        <Box sx={{ maxWidth: 520, width: '100%' }}>
+          <ErrorAlert error={error} fallback="Something went wrong. Please try again." />
+        </Box>
         {onBack && (
           <Button variant="outlined" onClick={onBack}>
             Go Back

@@ -4,16 +4,17 @@ import { RefreshCw } from '@wso2/oxygen-ui-icons-react';
 import PodDrawerShell from './PodDrawerShell';
 import { usePodLogs } from '../../hooks/useRuntime';
 import type { EnvironmentId } from '../../types/webApp';
+import type { TrackRef } from '../../types/track';
 
 interface PodLogsDrawerProps {
-  webAppId: string;
+  track: TrackRef;
   environment: EnvironmentId;
   podName: string;
   onClose: () => void;
 }
 
-export default function PodLogsDrawer({ webAppId, environment, podName, onClose }: PodLogsDrawerProps): JSX.Element {
-  const { data, isLoading, isError, isFetching, refetch } = usePodLogs(webAppId, environment, podName);
+export default function PodLogsDrawer({ track, environment, podName, onClose }: PodLogsDrawerProps): JSX.Element {
+  const { data, isLoading, isError, isFetching, refetch } = usePodLogs(track, environment, podName);
 
   const refresh = (
     <Button size="small" variant="outlined" onClick={() => void refetch()} disabled={isFetching} startIcon={<RefreshCw size={14} />}>

@@ -59,57 +59,57 @@ designed, not as empty stubs.
 Ported pages were stripped of `GENERIC_SERVICE_TYPES` / `identifyIntegration` / APIM
 endpoint-and-visibility drawers / subscription and BYOI gating / gateway-logs tab.
 
-### Backend doesn't exist yet — everything is stubbed
+### Backend: the Web App Hosting BFF (`backend/`)
 
-The Web App Hosting backend hasn't been built. `src/api/*.ts` (orgs, projects, webApps, builds, deployments, runtime, containers, configs,
-healthChecks, scaling, metrics, logs, deploymentTracks, urlSettings, samples)
-resolve from `src/mock-data/*.ts` after an artificial delay, with function signatures written to
-match what a real REST client will look like — swapping in real `httpClient` calls later should
-be a small diff per file, not a rewrite. `src/contexts/AccessControlContext.tsx` /
-`src/components/Authorized.tsx` are an **always-allow stub** (no real permission model exists
-yet either) — `src/auth/ProtectedRoute.tsx` only checks for a session, not permissions.
+`src/api/*.ts` call the BFF (`webAppHostingClient`, base `VITE_WEBAPP_API_URL`; contract
+`backend/api/openapi.yaml`) — projects, web apps, deployment tracks, builds (+ step logs),
+deployments, runtime, containers, fixed-replica scaling, configs/secrets/files, runtime logs and
+default URLs. The BFF runs against WSO2 Cloud (`TARGET=wso2cloud`) or a local OpenChoreo
+(`TARGET=openchoreo`). Still stubs (their pages show "Coming soon" instead of mock data):
+`healthChecks.ts`, `metrics.ts` (P1) and custom domains in `urlSettings.ts` (P2); HPA and Docker
+image import are visible but disabled (P1). `src/contexts/AccessControlContext.tsx` /
+`src/components/Authorized.tsx` are still an **always-allow stub** (same as ICP cloud).
 
-**When the real backend lands**, replace the bodies of the `src/api/*.ts` files one at a time,
-keep the `src/hooks/*.ts` TanStack Query layer as-is (it already wraps `api/`, nothing above it
-needs to change), and update this note.
+Unlike ipaas, every web-app page is **per deployment track**: a track is one branch, backed by one
+OpenChoreo Component. The selected track lives in `?track=` (`paths.withTrack`), is resolved by
+`useWebAppContext` (default: the web app's default track) and reaches the hooks as a
+`TrackRef {webAppId, trackId}`; `WebAppPage` renders the track picker. Environments come from the
+project's deployment pipeline (`useProjectEnvironments`), not a hardcoded list; `WebAppPage
+withEnvironment` renders the environment picker.
 
 ### Auth: ported, but simplified to one path
 
 `src/auth/` (`AuthContext.tsx`, `tokenManager.ts`, `authorizeUrl.ts`, `ProtectedRoute.tsx`) is
-ported from ipaas near-verbatim (OIDC+PKCE, `/signin` callback, STS org-scoped token exchange,
-`switchOrgToken`), but always follows the simpler "org context comes straight from the JWT"
-path (`organization.handle`/`ouHandle` claims) rather than ipaas's dual wip-vs-cloud branching.
+ported from ipaas (OIDC+PKCE, `/signin` callback) against the Platform IdP (ThunderID; config keys
+keep the legacy `ASGARDEO_*` names). There is **no STS**, as in ICP cloud: the org comes straight
+from the JWT (`organization.handle`/`ouHandle`), falling back to `ORG_HANDLE` in `config.json`
+(local OpenChoreo tokens carry no org claims). After login the console calls the billing API
+`/organization?product=web-app-hosting` (when `BILLING_API_BASE_URL` is set), which activates the
+free plan; billing UI is hidden without it.
 
-### Git/Docker sourcing: some stubbed, some net-new
+### Git sourcing
 
-- **GitHub OAuth** ("Continue With GitHub"): the popup + `BroadcastChannel` flow is ported from
-  ipaas, but there's no backend to exchange the OAuth code for a token, so it's explicitly
-  stubbed — once a code is captured, the UI just switches from a URL-paste field to plain text
-  org/repo inputs (not live GitHub-API-backed pickers). See `src/pages/ImportWebAppOptions.tsx`
-  and `src/pages/GitHubAuthCallback.tsx`.
-- **Other providers** (Bitbucket/GitLab/Azure DevOps): ipaas has a stored-credential picker
-  backed by a credentials backend. This app doesn't have that backend, so these providers reuse
-  the same public-URL-paste flow as "Use Public GitHub Repository" instead.
-- **Docker/container image import**: ipaas has **no** creation-time Docker source at all (only a
-  post-creation bring-your-own-image flow). This is net-new for Web App Hosting —
-  `src/pages/CreateWebAppForm.tsx`'s docker branch (registry type, image, tag, free-text
-  credential reference — no real credential picker backend yet either).
-- **Build Preset selector** (12 presets — Node/React/Angular/.NET/Vue/Python/Go/Ruby/PHP/Spring
-  Boot/Static/Docker — in `src/pages/CreateWebAppForm.tsx`): also net-new. ipaas only has
-  Ballerina/MI technology auto-detection, nothing like a general framework preset picker. Each
-  preset's logo (`src/assets/build-presets/*.svg`) was extracted not from ipaas but from a
-  third repo, `choreo-console` (the legacy WSO2 IDP UI)'s buildpack picker
-  (`ComponentTemplates/`, plus `dotnet.svg` from its `public/images/buildpacks/`) — none are
-  theme-aware (hardcoded brand-color fills, no dark variant), so each renders inside a small
-  white rounded badge in the chip for contrast rather than bare on the dark background.
+- **GitHub App** ("Continue With GitHub", WSO2 Cloud only — hidden when the BFF reports
+  `gitHubApp: false`): the popup + `BroadcastChannel` flow is ported from ipaas; the BFF exchanges the
+  code with git-app-service (`/git/github/installations`), then the configure page shows live
+  installation → repository → branch pickers. A 409 opens the App install page.
+- **Public GitHub repositories**: URL paste plus a live branch picker.
+- Other providers (Bitbucket/GitLab/Azure DevOps) are hidden for now (private non-GitHub repos are P2).
+- **Docker/container image import**: visible but disabled (P1).
+- **Build Preset selector** (12 presets, `src/pages/CreateWebAppForm.tsx`) is net-new. The BFF maps
+  React/Angular/Vue/Static to its SPA workflow (nginx-unprivileged on 8080, so the port field is fixed
+  for them), language presets to Paketo and Docker to the Dockerfile builder. Preset logos
+  (`src/assets/build-presets/*.svg`) come from `choreo-console`'s buildpack picker; none are
+  theme-aware, so each renders inside a small white rounded badge.
 
 ### Samples: hardcoded manifest, not a remote JSON fetch
 
 ipaas's samples gallery fetches a JSON manifest from an external URL at runtime
 (`useSamples`/`window.API_CONFIG.samplesUrl`). This app hardcodes the 4 known samples directly
 in `src/mock-data/samples.ts` (React/Vue/Angular/Go, all from `wso2/choreo-samples`) since
-there's no equivalent manifest published for Web App Hosting yet. Switch `src/api/samples.ts`
-to a real fetch once one exists.
+there's no equivalent manifest published for Web App Hosting yet. "Quick deploy" turns a sample
+into a public-Git create request (`utils/sampleInput.ts`). Switch `src/api/samples.ts` to a real
+fetch once a manifest exists.
 
 ### Overview page: no plugin registry
 
@@ -117,18 +117,41 @@ ipaas's component-overview page is a per-integration-type plugin registry
 (`Overview/registry.ts` + a shell/plugin architecture) because it renders differently per
 integration type. This app only has one resource type (a web app), so
 `src/pages/WebAppOverview.tsx` is one flat component (header + `Latest Build` card +
-Development/Production environment cards) — no registry, no plugin indirection.
+one card per pipeline environment) — no registry, no plugin indirection.
 
-### Dev-only demo helper (doesn't exist in ipaas at all)
+### Dev-only helpers (don't exist in ipaas at all)
 
-Since there's no real WSO2 Identity Platform tenant configured for this app yet
-(`public/config.json`'s Asgardeo/GitHub values are placeholders), `AuthContext.devLogin()` +
-`src/pages/DevSeedSession.tsx` seed a fake local session so the app can be demoed without a real
-IdP. The `/dev-login` route is registered only inside `import.meta.env.DEV` (confirmed stripped
-from production builds) and `pnpm demo` (`vite --open /dev-login`) launches straight into it.
-ipaas has no equivalent — it always requires its real dev IdP.
+- `pnpm dev:local` (Vite mode `openchoreo`) runs the console against a local OpenChoreo on k3d: it
+  serves `public/config.local.json` as `/config.json` and proxies the BFF (`/__bff`) and ThunderID
+  (`/__thunder`) so neither needs CORS. See the repo `README.md`.
+- `AuthContext.devLogin()` + `src/pages/DevSeedSession.tsx` seed a fake session without an IdP
+  (`/dev-login`, registered only under `import.meta.env.DEV`; `pnpm demo`). Pair it with the BFF in
+  `AUTH_MODE=dev` (local only), which then uses its own client for every platform call.
 
 ## Changelog
+
+### 2026-10-07 — P0: wired to the BFF
+
+- **Why:** the Web App Hosting BFF (`backend/`) exists now; P0 makes the core loop real.
+- **API:** all `src/api/*.ts` except `healthChecks`, `metrics`, `samples` and the custom-domain half of
+  `urlSettings` call the BFF (`api/trackPath.ts` builds track paths). New `api/meta.ts`, `api/git.ts`,
+  `api/billing.ts`; `fetchBuildLogs` loads a build's step logs on demand. BFF `{code, message}` errors
+  become `HttpError.code`; `isQuotaExceeded` + `components/ErrorAlert` show "Quota reached — upgrade"
+  (link: `BILLING_CONSOLE_URL`) on web-app, track and sample create.
+- **Tracks:** hooks take a `TrackRef` (query keys include the track); `useWebAppContext` reads `?track=`;
+  `WebAppPage`, Overview and URL Settings render `components/webapp/TrackSelect`; the sidebar keeps the track.
+- **Environments:** from the project pipeline (`useProjectEnvironments`); `constants/environments.ts` is now
+  `environmentLabel`; `EnvironmentId` is a string.
+- **Polling (as ICP):** builds 5s while running / 15s idle; deployments and environments 8s while deploying /
+  15s idle (auto-deploys land in the background); runtime 15s.
+- **Configs:** new `file` kind (one file + mount directory; SPA apps default to `/usr/share/nginx/html`, e.g. `config.js`).
+- **Coming soon / disabled:** Health Checks, Metrics, custom domains, HPA, Docker import, container
+  command/args editing, non-GitHub providers.
+- **Auth:** STS removed (`switchOrgToken`, STS config keys); `ORG_HANDLE` fallback; refresh-token revocation at the
+  IdP (`ASGARDEO_REVOKE_ENDPOINT`); first-login billing activation + plan badge.
+- **Local:** `pnpm dev:local` + `public/config.local.json`. Console `Dockerfile` (nginx on 3000, from ICP).
+- Removed dead mock data (`mock-data/{builds,configs,containers,deploymentTracks,logs,orgs,projects,runtime,scaling,webApps}.ts`)
+  and `components/urlSettings/DomainDialog.tsx` (P2).
 
 ### 2026-10-07 — Monorepo layout
 

@@ -9,6 +9,17 @@ export interface HttpClient {
   delete: <T>(path: string, body?: unknown, headers?: Record<string, string>) => Promise<T>;
 }
 
+/** Builds an HttpError from a response body: the BFF answers `{code, message}`. */
+export function toHttpError(status: number, body: string): HttpError {
+  try {
+    const parsed = JSON.parse(body) as { code?: string; message?: string };
+    if (parsed && typeof parsed.message === 'string') return new HttpError(status, parsed.message, parsed.code);
+  } catch {
+    /* not JSON */
+  }
+  return new HttpError(status, `HTTP ${status}: ${body}`);
+}
+
 // Factory to create HTTP clients for different services.
 export function createHttpClient(getBaseUrl: () => string): HttpClient {
   async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -25,7 +36,7 @@ export function createHttpClient(getBaseUrl: () => string): HttpClient {
 
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      throw new HttpError(res.status, `HTTP ${res.status}: ${body || res.statusText}`);
+      throw toHttpError(res.status, body || res.statusText);
     }
     const text = await res.text().catch(() => '');
     if (!text) return undefined as T;
@@ -41,7 +52,5 @@ export function createHttpClient(getBaseUrl: () => string): HttpClient {
   };
 }
 
-// Single client for all Web App Hosting backend calls — see VITE_WEBAPP_API_URL in runtimeConfig.
-// Not yet used by src/api/*.ts (those still read from mock-data while the backend is built), but
-// wired up so swapping a stub function's body for a real call is a small, localized diff.
+// Single client for all Web App Hosting BFF calls — see VITE_WEBAPP_API_URL in runtimeConfig.
 export const webAppHostingClient = createHttpClient(() => window.API_CONFIG.webAppApiUrl);

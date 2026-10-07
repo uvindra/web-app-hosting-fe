@@ -1,9 +1,11 @@
 import type { CustomDomainInput, CustomDomainMapping, EnvironmentDefaultUrl } from '../types/urlSettings';
+import type { TrackRef } from '../types/track';
 import { MOCK_CUSTOM_DOMAINS } from '../mock-data/urlSettings';
 import { buildWebAppHost } from '../mock-data/deployments';
-import { ENVIRONMENT_IDS } from '../constants/environments';
+import { webAppHostingClient } from './httpClient';
+import { trackPath } from './trackPath';
 
-// STUB — see src/api/projects.ts for the reasoning; same shape, swap for real calls later.
+// Default URLs are real (BFF). Custom domains are P2: still a STUB, and the page shows them as "coming soon".
 const NETWORK_DELAY_MS = 200;
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -18,9 +20,9 @@ function domainsFor(webAppId: string): CustomDomainMapping[] {
   return list;
 }
 
-export async function fetchDefaultUrls(webApp: { id: string }): Promise<EnvironmentDefaultUrl[]> {
-  await delay(NETWORK_DELAY_MS);
-  return ENVIRONMENT_IDS.map((environment) => ({ environment, url: `https://${buildWebAppHost(webApp.id, environment)}` }));
+/** Each pipeline environment's default URL ("" when not deployed there). */
+export async function fetchDefaultUrls(track: TrackRef): Promise<EnvironmentDefaultUrl[]> {
+  return webAppHostingClient.get<EnvironmentDefaultUrl[]>(`${trackPath(track)}/urls`);
 }
 
 export async function fetchCustomDomains(webAppId: string): Promise<CustomDomainMapping[]> {

@@ -5,6 +5,8 @@ export interface ScalingMethodOption {
   title: string;
   description: string;
   badge?: string;
+  /** Not available yet (P1): shown but not selectable. */
+  comingSoon?: boolean;
 }
 
 export const SCALING_METHODS: ScalingMethodOption[] = [
@@ -12,6 +14,8 @@ export const SCALING_METHODS: ScalingMethodOption[] = [
     value: ScalingMethod.HPA,
     title: 'HPA',
     description: 'Scales the number of replicas based on CPU and memory usage.',
+    badge: 'Coming soon',
+    comingSoon: true,
   },
   {
     value: ScalingMethod.None,

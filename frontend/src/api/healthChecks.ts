@@ -2,7 +2,7 @@ import type { HealthCheck } from '../types/healthChecks';
 import type { EnvironmentId } from '../types/webApp';
 import { MOCK_HEALTH_CHECKS, defaultHealthCheck } from '../mock-data/healthChecks';
 
-// STUB — see src/api/builds.ts for the reasoning; same shape, swap for real calls later.
+// STUB (P1) — no backend yet; the Health Checks / Metrics pages show a "coming soon" notice instead.
 const NETWORK_DELAY_MS = 200;
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "demo": "vite --open /dev-login",
+    "dev:local": "vite --mode openchoreo",
     "build": "vite build",
     "build:check": "tsc -b && vite build",
     "lint": "eslint .",

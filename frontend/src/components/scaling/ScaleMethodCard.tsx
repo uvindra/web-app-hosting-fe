@@ -7,10 +7,11 @@ interface ScaleMethodCardProps {
   selected: boolean;
   /** Small chip next to the title, e.g. "Recommended". */
   badge?: string;
+  disabled?: boolean;
   onSelect: () => void;
 }
 
-export default function ScaleMethodCard({ title, description, selected, badge, onSelect }: ScaleMethodCardProps): JSX.Element {
+export default function ScaleMethodCard({ title, description, selected, badge, disabled = false, onSelect }: ScaleMethodCardProps): JSX.Element {
   return (
     <Card
       variant="outlined"
@@ -22,7 +23,7 @@ export default function ScaleMethodCard({ title, description, selected, badge, o
         transition: 'border-color 0.15s',
         '&:hover': { borderColor: 'primary.main' },
       }}>
-      <CardActionArea aria-pressed={selected} onClick={onSelect} sx={{ height: '100%' }}>
+      <CardActionArea aria-pressed={selected} onClick={onSelect} disabled={disabled} sx={{ height: '100%', opacity: disabled ? 0.6 : 1 }}>
         <CardContent>
           <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 0.5 }}>
             <Typography variant="body1" sx={{ fontWeight: 600, color: selected ? 'primary.main' : 'text.primary' }}>

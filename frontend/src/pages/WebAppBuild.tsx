@@ -6,15 +6,18 @@ import BuildConfigPanel from '../components/build/BuildConfigPanel';
 import BuildDetailsDrawer from '../components/build/BuildDetailsDrawer';
 import BuildHistory from '../components/build/BuildHistory';
 import LatestCommitCard from '../components/build/LatestCommitCard';
-import { useBuildConfig, useBuildRuns, useLatestCommit, useTriggerBuild } from '../hooks/useBuilds';
-import type { WebApp } from '../types/webApp';
+import { useBuildConfig, useBuildLogs, useBuildRuns, useLatestCommit, useTriggerBuild } from '../hooks/useBuilds';
+import type { TrackRef } from '../types/track';
 
-function BuildContent({ webApp }: { webApp: WebApp }): JSX.Element {
-  const config = useBuildConfig(webApp.id, webApp.repoUrl);
-  const runs = useBuildRuns(webApp.id);
-  const commit = useLatestCommit(webApp.id, webApp.repoUrl, config.data?.branch);
-  const trigger = useTriggerBuild(webApp.id);
+function BuildContent({ track }: { track: TrackRef }): JSX.Element {
+  const config = useBuildConfig(track);
+  const runs = useBuildRuns(track);
+  const commit = useLatestCommit(track);
+  const trigger = useTriggerBuild(track);
   const [selectedId, setSelectedId] = useState<string | undefined>();
+  const selectedRun = runs.data?.find((r) => r.id === selectedId);
+  // Step logs load on demand for the open build (live while it runs, archived afterwards).
+  const logs = useBuildLogs(track, selectedId, selectedRun?.status === 'in-progress');
 
   if (config.isLoading || runs.isLoading || commit.isLoading) {
     return (
@@ -29,12 +32,12 @@ function BuildContent({ webApp }: { webApp: WebApp }): JSX.Element {
   }
 
   const commitData = commit.data;
-  // Derive from the polled list so the open drawer reflects live status/logs.
-  const selected = runs.data.find((r) => r.id === selectedId);
+  // Status comes from the polled list; steps + logs from the logs query once loaded.
+  const selected = selectedRun && logs.data ? { ...selectedRun, steps: logs.data.steps } : selectedRun;
 
   return (
     <Stack gap={3}>
-      {trigger.isError && <Alert severity="error">Failed to trigger build.</Alert>}
+      {trigger.isError && <Alert severity="error">Failed to trigger build: {trigger.error instanceof Error ? trigger.error.message : 'unknown error'}</Alert>}
       <LatestCommitCard commit={commitData} building={trigger.isPending || runs.data.some((r) => r.status === 'in-progress')} onBuild={() => trigger.mutate(commitData)} />
       <BuildHistory builds={runs.data} selectedId={selectedId} onSelect={(b) => setSelectedId(b.id)} />
       <BuildConfigPanel config={config.data} />
@@ -46,7 +49,7 @@ function BuildContent({ webApp }: { webApp: WebApp }): JSX.Element {
 export default function WebAppBuild(): JSX.Element {
   return (
     <WebAppPage title="Build" description="Build your web app from source and review build history.">
-      {({ webApp }) => <BuildContent webApp={webApp} />}
+      {({ track }) => <BuildContent track={track} />}
     </WebAppPage>
   );
 }

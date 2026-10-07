@@ -4,18 +4,17 @@ import { Box, Chip, CircularProgress, PageContent, Stack, Typography } from '@ws
 import { AppWindow, GitBranch, Github } from '@wso2/oxygen-ui-icons-react';
 import EmptyListing from '../components/EmptyListing';
 import { WEB_APP_PAGE_MAX_WIDTH } from '../components/webapp/WebAppPage';
-import { useProjectByHandler } from '../hooks/useProjects';
-import { useWebAppByHandler } from '../hooks/useWebApps';
+import { useWebAppContext } from '../hooks/useWebAppContext';
+import TrackSelect from '../components/webapp/TrackSelect';
 import { useBuilds } from '../hooks/useBuilds';
 import { useDeployments } from '../hooks/useDeployments';
 import OverviewEnvironmentCard from '../components/deploy/OverviewEnvironmentCard';
 import { currentDeployment } from '../components/deploy/deploymentUtils';
-import { hasProject, hasWebApp, useScope } from '../nav';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
 import { getStatusColor } from '../utils/statusColor';
-import { ENVIRONMENT_IDS } from '../constants/environments';
-import { webAppBuildUrl, webAppDeployUrl } from '../paths';
+import { webAppBuildUrl, webAppDeployUrl, withTrack } from '../paths';
 import type { WebApp } from '../types/webApp';
+import type { TrackRef } from '../types/track';
 
 function SourceLink({ webApp }: { webApp: WebApp }): JSX.Element | null {
   if (!webApp.repoUrl) return null;
@@ -40,8 +39,8 @@ function SourceLink({ webApp }: { webApp: WebApp }): JSX.Element | null {
   );
 }
 
-function LatestBuildCard({ webAppId, buildUrl }: { webAppId: string; buildUrl: string }): JSX.Element {
-  const { data: builds, isLoading } = useBuilds(webAppId);
+function LatestBuildCard({ track, buildUrl }: { track: TrackRef; buildUrl: string }): JSX.Element {
+  const { data: builds, isLoading } = useBuilds(track);
   const lastBuild = builds?.[0];
 
   return (
@@ -75,16 +74,11 @@ function LatestBuildCard({ webAppId, buildUrl }: { webAppId: string; buildUrl: s
 
 /** Wireframe page 8 — the created web app's overview: source/commit header, latest build, per-environment deployment status. */
 export default function WebAppOverview(): JSX.Element {
-  const scope = useScope();
-  const projectHandler = hasProject(scope) ? scope.project : '';
-  const webAppHandler = hasWebApp(scope) ? scope.webApp : '';
+  const ctx = useWebAppContext();
+  const ready = ctx.status === 'ready' ? ctx : undefined;
+  const { data: deployments, isLoading: loadingDeployments } = useDeployments(ready?.track ?? { webAppId: '', trackId: '' });
 
-  const { data: project, isLoading: loadingProject } = useProjectByHandler(scope.org, projectHandler);
-  const projectId = project?.id ?? '';
-  const { data: webApp, isLoading: loadingWebApp } = useWebAppByHandler(projectId, webAppHandler);
-  const { data: deployments, isLoading: loadingDeployments } = useDeployments(webApp?.id ?? '');
-
-  if (loadingProject || (loadingWebApp && !!projectId)) {
+  if (ctx.status === 'loading') {
     return (
       <Box sx={{ display: 'flex', flex: 1, justifyContent: 'center', alignItems: 'center', py: 8 }}>
         <CircularProgress color="primary" />
@@ -92,7 +86,7 @@ export default function WebAppOverview(): JSX.Element {
     );
   }
 
-  if (!project || !webApp) {
+  if (ctx.status === 'not-found' || !ready) {
     return (
       <PageContent>
         <EmptyListing icon={<AppWindow size={48} />} title="Web app not found" description="This web app doesn't exist or you don't have access to it." />
@@ -100,12 +94,16 @@ export default function WebAppOverview(): JSX.Element {
     );
   }
 
+  const { scope, webApp, track, environments } = ready;
+  const deployUrl = withTrack(webAppDeployUrl(scope.org, scope.project, scope.webApp), track.trackId === webApp.defaultTrackId ? null : track.trackId);
   return (
     <PageContent sx={{ pt: 4, maxWidth: WEB_APP_PAGE_MAX_WIDTH }}>
       <Stack direction="row" alignItems="center" gap={2} sx={{ mb: 1 }}>
         <AppWindow size={32} />
         <Typography variant="h1">{webApp.displayName}</Typography>
         <Chip label={webApp.status === 'active' ? 'Active' : webApp.status} color={getStatusColor(webApp.status)} size="small" />
+        <Box sx={{ flex: 1 }} />
+        <TrackSelect track={track} />
       </Stack>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
         Web Application
@@ -131,14 +129,14 @@ export default function WebAppOverview(): JSX.Element {
         )}
       </Stack>
 
-      <LatestBuildCard webAppId={webApp.id} buildUrl={webAppBuildUrl(scope.org, projectHandler, webAppHandler)} />
+      <LatestBuildCard track={track} buildUrl={withTrack(webAppBuildUrl(scope.org, scope.project, scope.webApp), track.trackId === webApp.defaultTrackId ? null : track.trackId)} />
 
       {loadingDeployments ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
           <CircularProgress size={24} />
         </Box>
       ) : (
-        ENVIRONMENT_IDS.map((environment) => <OverviewEnvironmentCard key={environment} environment={environment} current={currentDeployment(deployments ?? [], environment)} deployUrl={webAppDeployUrl(scope.org, projectHandler, webAppHandler)} />)
+        environments.map((env) => <OverviewEnvironmentCard key={env.id} environment={env.id} environmentName={env.name} current={currentDeployment(deployments ?? [], env.id)} deployUrl={deployUrl} />)
       )}
     </PageContent>
   );

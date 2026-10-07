@@ -1,16 +1,20 @@
 import { useEffect, useRef, useState, type JSX } from 'react';
 import { useNavigate } from 'react-router';
-import { Alert, Box, Button, Card, CardContent, CircularProgress, Grid, PageContent, Stack, Typography } from '@wso2/oxygen-ui';
-import { ArrowLeft, Cloud, Container, GitFork, Github, Gitlab, MoreHorizontal } from '@wso2/oxygen-ui-icons-react';
+import { Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Grid, PageContent, Stack, Typography } from '@wso2/oxygen-ui';
+import { ArrowLeft, Container, Github } from '@wso2/oxygen-ui-icons-react';
 import EmptyListing from '../components/EmptyListing';
 import SampleCard from '../components/SampleCard';
 import { useProjectByHandler } from '../hooks/useProjects';
 import { useCreateWebApp } from '../hooks/useWebApps';
 import { useSamples } from '../hooks/useSamples';
+import { useMeta } from '../hooks/useMeta';
+import { useBindGitHubInstallations } from '../hooks/useGit';
+import ErrorAlert from '../components/ErrorAlert';
+import { HttpError } from '../types/http';
 import { hasProject, useScope } from '../nav';
-import { buildGitHubOAuthUrl, configureWebAppUrl, newWebAppUrl, webAppOverviewUrl } from '../paths';
+import { buildGitHubAppInstallUrl, buildGitHubOAuthUrl, configureWebAppUrl, newWebAppUrl, webAppOverviewUrl } from '../paths';
 import { generateAndSaveGitHubState, validateAndClearGitHubState } from '../auth/tokenManager';
-import { toHandler } from '../utils/toHandler';
+import { sampleToInput } from '../utils/sampleInput';
 import type { Sample } from '../types/sample';
 import type { WebAppSourceType } from '../types/webApp';
 
@@ -18,13 +22,6 @@ const GITHUB_BROADCAST_CHANNEL = 'EXTERNALOAUTH';
 const POPUP_DIMENSIONS = 'width=800,height=600';
 const POPUP_POLL_INTERVAL_MS = 500;
 
-type OtherProvider = 'bitbucket' | 'gitlab' | 'azure';
-
-const OTHER_PROVIDERS: { id: OtherProvider; label: string; Icon: typeof Gitlab }[] = [
-  { id: 'gitlab', label: 'GitLab', Icon: Gitlab },
-  { id: 'bitbucket', label: 'Bitbucket', Icon: GitFork },
-  { id: 'azure', label: 'Azure DevOps', Icon: Cloud },
-];
 
 /** Wireframe page 5 — expanded git-provider options once "Import a repository from" is chosen. */
 export default function ImportWebAppOptions(): JSX.Element {
@@ -32,7 +29,9 @@ export default function ImportWebAppOptions(): JSX.Element {
   const scope = useScope();
   const projectHandler = hasProject(scope) ? scope.project : '';
   const [deployingSampleId, setDeployingSampleId] = useState<string | null>(null);
-  const [showOtherProviders, setShowOtherProviders] = useState(false);
+  const [sampleError, setSampleError] = useState<unknown>(null);
+  const { data: meta } = useMeta();
+  const bind = useBindGitHubInstallations();
   const [authenticating, setAuthenticating] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
@@ -67,12 +66,11 @@ export default function ImportWebAppOptions(): JSX.Element {
     );
   }
 
-  const goToConfigure = (state: { sourceType: WebAppSourceType; provider?: OtherProvider; authenticated?: boolean }) => navigate(configureWebAppUrl(scope.org, project.handler), { state });
+  const goToConfigure = (state: { sourceType: WebAppSourceType; authenticated?: boolean }) => navigate(configureWebAppUrl(scope.org, project.handler), { state });
 
-  // Continue With GitHub — opens the WSO2 GitHub App OAuth popup. There's no backend yet to
-  // exchange the returned code for a token, so once we capture it we treat the connection as
-  // "authenticated" for UI purposes only (the configure page falls back to plain text inputs
-  // instead of live GitHub-API-backed org/repo/branch pickers).
+  // Continue With GitHub — opens the WSO2 GitHub App OAuth popup, then the BFF exchanges the
+  // returned code with git-app-service, binding the user's App installations to the org. A 409
+  // means the App is authorized but not installed anywhere yet: open the install page.
   const handleContinueWithGitHub = () => {
     setAuthError(null);
     const { githubAppClientId, githubAppAuthRedirectUrl } = window.API_CONFIG;
@@ -111,15 +109,30 @@ export default function ImportWebAppOptions(): JSX.Element {
         setAuthError('GitHub authorization failed. Please try again.');
         return;
       }
-      goToConfigure({ sourceType: 'github', authenticated: true });
+      bind.mutate(authCode, {
+        onSuccess: () => goToConfigure({ sourceType: 'github', authenticated: true }),
+        onError: (err) => {
+          setAuthenticating(false);
+          const slug = window.API_CONFIG.githubAppSlug;
+          if (err instanceof HttpError && err.status === 409 && slug) {
+            window.open(buildGitHubAppInstallUrl(slug), '_blank', 'noopener');
+            setAuthError('Install the GitHub App on your account or organization, then choose Continue With GitHub again.');
+            return;
+          }
+          setAuthError(err instanceof Error ? err.message : 'GitHub authorization failed. Please try again.');
+        },
+      });
     };
   };
 
   const handleQuickDeploy = async (sample: Sample) => {
     setDeployingSampleId(sample.id);
+    setSampleError(null);
     try {
-      const webApp = await createWebApp.mutateAsync({ sourceType: 'sample', sampleId: sample.id, displayName: sample.name, handler: toHandler(sample.name) });
+      const webApp = await createWebApp.mutateAsync(sampleToInput(sample));
       navigate(webAppOverviewUrl(scope.org, project.handler, webApp.handler));
+    } catch (err) {
+      setSampleError(err);
     } finally {
       setDeployingSampleId(null);
     }
@@ -138,6 +151,11 @@ export default function ImportWebAppOptions(): JSX.Element {
         Connect your source code from an existing Git Repository or select one of our samples.
       </Typography>
 
+      {sampleError !== null && (
+        <Box sx={{ mb: 3 }}>
+          <ErrorAlert error={sampleError} fallback="Failed to create the sample web app." onClose={() => setSampleError(null)} />
+        </Box>
+      )}
       {authError && (
         <Alert severity="error" sx={{ mb: 3 }} onClose={() => setAuthError(null)}>
           {authError}
@@ -150,29 +168,20 @@ export default function ImportWebAppOptions(): JSX.Element {
             Connect a Git Repository
           </Typography>
           <Stack gap={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, overflow: 'hidden', mb: 3 }}>
-            <Button
-              fullWidth
-              onClick={handleContinueWithGitHub}
-              disabled={authenticating}
-              startIcon={authenticating ? <CircularProgress size={16} /> : <Github size={18} />}
-              sx={{ justifyContent: 'flex-start', px: 2, py: 1.5, borderRadius: 0, borderBottom: '1px solid', borderColor: 'divider' }}>
-              {authenticating ? 'Waiting for GitHub authorization…' : 'Continue With GitHub'}
-            </Button>
-            <Button fullWidth onClick={() => goToConfigure({ sourceType: 'public-git' })} startIcon={<Github size={18} />} sx={{ justifyContent: 'flex-start', px: 2, py: 1.5, borderRadius: 0, borderBottom: '1px solid', borderColor: 'divider' }}>
+            {/* The GitHub App (private repositories) exists only on WSO2 Cloud; a local OpenChoreo target builds public repositories. */}
+            {meta?.gitHubApp && (
+              <Button
+                fullWidth
+                onClick={handleContinueWithGitHub}
+                disabled={authenticating}
+                startIcon={authenticating ? <CircularProgress size={16} /> : <Github size={18} />}
+                sx={{ justifyContent: 'flex-start', px: 2, py: 1.5, borderRadius: 0, borderBottom: '1px solid', borderColor: 'divider' }}>
+                {authenticating ? 'Waiting for GitHub authorization…' : 'Continue With GitHub'}
+              </Button>
+            )}
+            <Button fullWidth onClick={() => goToConfigure({ sourceType: 'public-git' })} startIcon={<Github size={18} />} sx={{ justifyContent: 'flex-start', px: 2, py: 1.5, borderRadius: 0 }}>
               Use Public GitHub Repository
             </Button>
-            <Button fullWidth onClick={() => setShowOtherProviders((v) => !v)} startIcon={<MoreHorizontal size={18} />} sx={{ justifyContent: 'flex-start', px: 2, py: 1.5, borderRadius: 0 }}>
-              Try a Different Git Provider
-            </Button>
-            {showOtherProviders && (
-              <Stack direction="row" gap={1.5} sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider' }}>
-                {OTHER_PROVIDERS.map(({ id, label, Icon }) => (
-                  <Button key={id} variant="outlined" size="small" startIcon={<Icon size={16} />} onClick={() => goToConfigure({ sourceType: 'public-git', provider: id })}>
-                    {label}
-                  </Button>
-                ))}
-              </Stack>
-            )}
           </Stack>
 
           <Stack direction="row" alignItems="center" gap={1.5} sx={{ mb: 3 }}>
@@ -186,12 +195,13 @@ export default function ImportWebAppOptions(): JSX.Element {
           <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, mb: 1.5 }}>
             Connect a Docker Image
           </Typography>
-          <Card variant="outlined" sx={{ cursor: 'pointer', '&:hover': { borderColor: 'primary.main' } }} onClick={() => goToConfigure({ sourceType: 'docker' })}>
+          {/* Docker image import is P1: shown, but not selectable yet. */}
+          <Card variant="outlined" sx={{ opacity: 0.6 }} aria-disabled>
             <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
               <Container size={22} />
               <Box sx={{ flex: 1 }}>
                 <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                  Container Registry
+                  Container Registry <Chip label="Coming soon" size="small" color="info" sx={{ ml: 1 }} />
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
                   Deploy from an existing container image

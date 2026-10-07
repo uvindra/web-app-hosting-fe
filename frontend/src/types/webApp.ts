@@ -8,7 +8,13 @@ export interface WebApp {
   id: string;
   handler: string;
   displayName: string;
+  description?: string;
   framework: string;
+  buildPreset?: BuildPreset;
+  /** Project the web app lives in. */
+  projectId?: string;
+  /** The default deployment track (an OpenChoreo Component name). */
+  defaultTrackId?: string;
   url?: string;
   status: WebAppStatus;
   updatedAt: string;
@@ -26,6 +32,8 @@ export interface CreateWebAppGitInput {
   sourceType: 'github' | 'public-git';
   gitOrganization?: string;
   repository: string;
+  /** GitHub App installation that grants access to the repository (sourceType `github`). */
+  installationId?: number;
   branch: string;
   componentDirectory: string;
   displayName: string;
@@ -67,7 +75,8 @@ export interface Build {
   triggeredAt: string;
 }
 
-export type EnvironmentId = 'development' | 'production';
+/** An environment of the project's deployment pipeline (e.g. `development`). */
+export type EnvironmentId = string;
 
 export interface EnvironmentDeployment {
   environment: EnvironmentId;

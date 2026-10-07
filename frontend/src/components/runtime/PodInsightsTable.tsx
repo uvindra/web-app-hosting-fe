@@ -9,9 +9,10 @@ import { formatRelativeTime } from '../../utils/formatRelativeTime';
 import { usagePercent } from '../../utils/podMetrics';
 import type { Pod } from '../../types/runtime';
 import type { EnvironmentId } from '../../types/webApp';
+import type { TrackRef } from '../../types/track';
 
 interface PodInsightsTableProps {
-  webAppId: string;
+  track: TrackRef;
   environment: EnvironmentId;
   pods: Pod[];
 }
@@ -20,7 +21,7 @@ type Drawer = { kind: 'logs' | 'events'; podName: string } | null;
 
 const PHASE_COLOR = { Running: 'success', Pending: 'warning', Failed: 'error', Succeeded: 'default' } as const;
 
-export default function PodInsightsTable({ webAppId, environment, pods }: PodInsightsTableProps): JSX.Element {
+export default function PodInsightsTable({ track, environment, pods }: PodInsightsTableProps): JSX.Element {
   const [drawer, setDrawer] = useState<Drawer>(null);
   const drawerPod = drawer ? pods.find((p) => p.name === drawer.podName) : undefined;
 
@@ -78,8 +79,8 @@ export default function PodInsightsTable({ webAppId, environment, pods }: PodIns
           </ListingTable.Body>
         </ListingTable>
       </ListingTable.Container>
-      {drawer?.kind === 'logs' && <PodLogsDrawer webAppId={webAppId} environment={environment} podName={drawer.podName} onClose={() => setDrawer(null)} />}
-      {drawer?.kind === 'events' && drawerPod && <PodEventsDrawer webAppId={webAppId} environment={environment} pod={drawerPod} onClose={() => setDrawer(null)} />}
+      {drawer?.kind === 'logs' && <PodLogsDrawer track={track} environment={environment} podName={drawer.podName} onClose={() => setDrawer(null)} />}
+      {drawer?.kind === 'events' && drawerPod && <PodEventsDrawer track={track} environment={environment} pod={drawerPod} onClose={() => setDrawer(null)} />}
     </>
   );
 }

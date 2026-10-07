@@ -4,13 +4,14 @@ import { Alert, Box, Button, Divider, Stack, Tooltip, Typography } from '@wso2/o
 import { ArrowDown, History, RefreshCw, Rocket, Square } from '@wso2/oxygen-ui-icons-react';
 import type { Deployment } from '../../types/deployment';
 import type { EnvironmentId } from '../../types/webApp';
-import { ENVIRONMENT_LABEL } from '../../constants/environments';
 import DeploymentHistoryDrawer from './DeploymentHistoryDrawer';
 import DeploymentStatusChip from './DeploymentStatusChip';
 import DeploymentSummary from './DeploymentSummary';
 
 interface DeployEnvironmentCardProps {
   environment: EnvironmentId;
+  /** Display name of the environment. */
+  environmentName: string;
   current: Deployment | undefined;
   history: Deployment[];
   /** Label of the next environment in the pipeline; undefined for the last one. */
@@ -25,9 +26,9 @@ interface DeployEnvironmentCardProps {
   onPromote: () => void;
 }
 
-export default function DeployEnvironmentCard({ environment, current, history, promoteTargetName, canDeployBuild, busy, error, onDeployBuild, onRedeploy, onStop, onPromote }: DeployEnvironmentCardProps): JSX.Element {
+export default function DeployEnvironmentCard({ environmentName, current, history, promoteTargetName, canDeployBuild, busy, error, onDeployBuild, onRedeploy, onStop, onPromote }: DeployEnvironmentCardProps): JSX.Element {
   const [historyOpen, setHistoryOpen] = useState(false);
-  const envName = ENVIRONMENT_LABEL[environment];
+  const envName = environmentName;
   const running = current?.status === 'active';
 
   return (

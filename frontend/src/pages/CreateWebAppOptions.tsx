@@ -1,6 +1,6 @@
 import { useState, type JSX } from 'react';
 import { useNavigate } from 'react-router';
-import { Box, Button, Card, CardContent, CircularProgress, Grid, PageContent, Stack, Typography } from '@wso2/oxygen-ui';
+import { Box, Button, Card, CardContent, Chip, CircularProgress, Grid, PageContent, Stack, Typography } from '@wso2/oxygen-ui';
 import { ArrowLeft, Container, GitBranch } from '@wso2/oxygen-ui-icons-react';
 import EmptyListing from '../components/EmptyListing';
 import SampleCard from '../components/SampleCard';
@@ -8,8 +8,9 @@ import { useProjectByHandler } from '../hooks/useProjects';
 import { useCreateWebApp } from '../hooks/useWebApps';
 import { useSamples } from '../hooks/useSamples';
 import { hasProject, useScope } from '../nav';
-import { configureWebAppUrl, importWebAppUrl, projectHomeUrl, webAppOverviewUrl } from '../paths';
-import { toHandler } from '../utils/toHandler';
+import { importWebAppUrl, projectHomeUrl, webAppOverviewUrl } from '../paths';
+import { sampleToInput } from '../utils/sampleInput';
+import ErrorAlert from '../components/ErrorAlert';
 import type { Sample } from '../types/sample';
 
 /** Wireframe page 4 — the initial "how would you like to create your web app?" wizard entry. */
@@ -18,6 +19,7 @@ export default function CreateWebAppOptions(): JSX.Element {
   const scope = useScope();
   const projectHandler = hasProject(scope) ? scope.project : '';
   const [deployingSampleId, setDeployingSampleId] = useState<string | null>(null);
+  const [sampleError, setSampleError] = useState<unknown>(null);
 
   const { data: project, isLoading: loadingProject } = useProjectByHandler(scope.org, projectHandler);
   const projectId = project?.id ?? '';
@@ -42,9 +44,12 @@ export default function CreateWebAppOptions(): JSX.Element {
 
   const handleQuickDeploy = async (sample: Sample) => {
     setDeployingSampleId(sample.id);
+    setSampleError(null);
     try {
-      const webApp = await createWebApp.mutateAsync({ sourceType: 'sample', sampleId: sample.id, displayName: sample.name, handler: toHandler(sample.name) });
+      const webApp = await createWebApp.mutateAsync(sampleToInput(sample));
       navigate(webAppOverviewUrl(scope.org, project.handler, webApp.handler));
+    } catch (err) {
+      setSampleError(err);
     } finally {
       setDeployingSampleId(null);
     }
@@ -59,6 +64,11 @@ export default function CreateWebAppOptions(): JSX.Element {
       <Typography variant="h1" sx={{ mb: 4 }}>
         How would you like to create your web app?
       </Typography>
+      {sampleError !== null && (
+        <Box sx={{ mb: 3 }}>
+          <ErrorAlert error={sampleError} fallback="Failed to create the sample web app." onClose={() => setSampleError(null)} />
+        </Box>
+      )}
 
       <Grid container spacing={3}>
         <Grid size={{ xs: 12, md: 7 }}>
@@ -74,7 +84,7 @@ export default function CreateWebAppOptions(): JSX.Element {
                     Import a repository from
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Connect your source code from GitHub, Bitbucket, GitLab, or Azure DevOps
+                    Connect your source code from GitHub
                   </Typography>
                 </Box>
               </CardContent>
@@ -91,12 +101,13 @@ export default function CreateWebAppOptions(): JSX.Element {
             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
               Connect a Docker Image
             </Typography>
-            <Card variant="outlined" sx={{ cursor: 'pointer', '&:hover': { borderColor: 'primary.main' } }} onClick={() => navigate(configureWebAppUrl(scope.org, project.handler), { state: { sourceType: 'docker' } })}>
+            {/* Docker image import is P1: shown, but not selectable yet. */}
+            <Card variant="outlined" sx={{ opacity: 0.6 }} aria-disabled>
               <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <Container size={22} />
                 <Box sx={{ flex: 1 }}>
                   <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                    Container Registry
+                    Container Registry <Chip label="Coming soon" size="small" color="info" sx={{ ml: 1 }} />
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
                     Deploy from an existing container image

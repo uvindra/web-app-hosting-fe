@@ -1,39 +1,29 @@
 import type { Pod, PodEvent, ReleaseDetails } from '../types/runtime';
 import type { EnvironmentId } from '../types/webApp';
-import { buildEvents, buildLogs, buildPods, buildRelease } from '../mock-data/runtime';
+import type { TrackRef } from '../types/track';
+import { webAppHostingClient } from './httpClient';
+import { envPath } from './trackPath';
 
-// STUB — see src/api/projects.ts for the reasoning; same shape, swap for real calls later.
-const NETWORK_DELAY_MS = 200;
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const enc = encodeURIComponent;
 
-const releases = new Map<string, ReleaseDetails>();
-const key = (webAppId: string, env: EnvironmentId): string => `${webAppId}:${env}`;
-
-export async function fetchReleaseDetails(webAppId: string, env: EnvironmentId): Promise<ReleaseDetails> {
-  await delay(NETWORK_DELAY_MS);
-  return releases.get(key(webAppId, env)) ?? buildRelease(webAppId, env);
+export async function fetchReleaseDetails(track: TrackRef, env: EnvironmentId): Promise<ReleaseDetails> {
+  return webAppHostingClient.get<ReleaseDetails>(`${envPath(track, env)}/release`);
 }
 
-export async function fetchPods(webAppId: string, env: EnvironmentId): Promise<Pod[]> {
-  await delay(NETWORK_DELAY_MS);
-  return buildPods(webAppId, env);
+export async function fetchPods(track: TrackRef, env: EnvironmentId): Promise<Pod[]> {
+  return webAppHostingClient.get<Pod[]>(`${envPath(track, env)}/pods`);
 }
 
-export async function fetchPodEvents(webAppId: string, env: EnvironmentId, podName: string): Promise<PodEvent[]> {
-  await delay(NETWORK_DELAY_MS);
-  void [webAppId, env, podName];
-  return buildEvents();
+export async function fetchPodEvents(track: TrackRef, env: EnvironmentId, podName: string): Promise<PodEvent[]> {
+  return webAppHostingClient.get<PodEvent[]>(`${envPath(track, env)}/pods/${enc(podName)}/events`);
 }
 
-export async function fetchPodLogs(webAppId: string, env: EnvironmentId, podName: string): Promise<string[]> {
-  await delay(NETWORK_DELAY_MS);
-  void [webAppId, env, podName];
-  return buildLogs();
+export async function fetchPodLogs(track: TrackRef, env: EnvironmentId, podName: string): Promise<string[]> {
+  return webAppHostingClient.get<string[]>(`${envPath(track, env)}/pods/${enc(podName)}/logs`);
 }
 
-export async function redeployRelease(webAppId: string, env: EnvironmentId): Promise<ReleaseDetails> {
-  await delay(NETWORK_DELAY_MS);
-  const next = { ...(releases.get(key(webAppId, env)) ?? buildRelease(webAppId, env)), deployedAt: new Date().toISOString() };
-  releases.set(key(webAppId, env), next);
-  return next;
+/** Rolling restart of the environment (re-applies its binding). */
+export async function redeployRelease(track: TrackRef, env: EnvironmentId): Promise<ReleaseDetails> {
+  await webAppHostingClient.post(`${envPath(track, env)}/redeploy`);
+  return fetchReleaseDetails(track, env);
 }

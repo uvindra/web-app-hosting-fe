@@ -5,10 +5,11 @@ import ContainerEditForm from './ContainerEditForm';
 import { formatRelativeTime } from '../../utils/formatRelativeTime';
 import type { WebAppContainer } from '../../types/containers';
 import type { EnvironmentId } from '../../types/webApp';
+import type { TrackRef } from '../../types/track';
 
 interface ContainerInfoCardProps {
   container: WebAppContainer;
-  webAppId: string;
+  track: TrackRef;
   environment: EnvironmentId;
   onSaved: (message: string) => void;
   onError: (message: string) => void;
@@ -29,14 +30,14 @@ function Detail({ label, children }: { label: string; children: string | JSX.Ele
   );
 }
 
-export default function ContainerInfoCard({ container: c, webAppId, environment, onSaved, onError }: ContainerInfoCardProps): JSX.Element {
+export default function ContainerInfoCard({ container: c, track, environment, onSaved, onError }: ContainerInfoCardProps): JSX.Element {
   const [editing, setEditing] = useState(false);
 
   if (editing) {
     return (
       <ContainerEditForm
         container={c}
-        webAppId={webAppId}
+        track={track}
         environment={environment}
         onClose={() => setEditing(false)}
         onSaved={(m) => {

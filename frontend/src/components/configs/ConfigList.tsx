@@ -7,13 +7,14 @@ import { useConfigs, useDeleteConfig } from '../../hooks/useConfigs';
 import { formatRelativeTime } from '../../utils/formatRelativeTime';
 import type { ConfigItem } from '../../types/configs';
 import type { EnvironmentId } from '../../types/webApp';
+import type { TrackRef } from '../../types/track';
 
 type View = { kind: 'list' } | { kind: 'create' } | { kind: 'edit'; item: ConfigItem };
 type Notice = { type: 'success' | 'error'; message: string } | null;
 
-export default function ConfigList({ webAppId, environment }: { webAppId: string; environment: EnvironmentId }): JSX.Element {
-  const { data, isLoading, isError } = useConfigs(webAppId, environment);
-  const del = useDeleteConfig(webAppId, environment);
+export default function ConfigList({ track, environment, isSpa = false }: { track: TrackRef; environment: EnvironmentId; isSpa?: boolean }): JSX.Element {
+  const { data, isLoading, isError } = useConfigs(track, environment);
+  const del = useDeleteConfig(track, environment);
   const [view, setView] = useState<View>({ kind: 'list' });
   const [deleting, setDeleting] = useState<ConfigItem | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
@@ -32,9 +33,10 @@ export default function ConfigList({ webAppId, environment }: { webAppId: string
   if (view.kind !== 'list') {
     return (
       <ConfigEditor
-        webAppId={webAppId}
+        track={track}
         environment={environment}
         existing={view.kind === 'edit' ? view.item : undefined}
+        isSpa={isSpa}
         onBack={() => setView({ kind: 'list' })}
         onSaved={(message) => {
           setView({ kind: 'list' });
@@ -72,7 +74,7 @@ export default function ConfigList({ webAppId, environment }: { webAppId: string
         </Alert>
       )}
       {data.length === 0 ? (
-        <EmptyListing icon={<KeyRound size={48} />} title="No configs or secrets" description="Inject environment variables such as API_BASE_URL into this web app." />
+        <EmptyListing icon={<KeyRound size={48} />} title="No configs or secrets" description="Inject environment variables such as API_BASE_URL, secrets, or files such as a SPA config.js into this web app." />
       ) : (
         <ListingTable.Container>
           <ListingTable>
@@ -91,6 +93,7 @@ export default function ConfigList({ webAppId, environment }: { webAppId: string
                     <Stack direction="row" alignItems="center" gap={1}>
                       {item.name}
                       {item.kind === 'secret' && <Chip label="Secret" size="small" variant="outlined" color="warning" />}
+                      {item.kind === 'file' && <Chip label={`File · ${item.mountPath ?? ''}/${item.entries[0]?.key ?? ''}`} size="small" variant="outlined" />}
                     </Stack>
                   </ListingTable.Cell>
                   <ListingTable.Cell sx={{ fontFamily: 'monospace' }}>{item.entries.map((e) => e.key).join(', ')}</ListingTable.Cell>

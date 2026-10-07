@@ -2,17 +2,17 @@ import { useState, type JSX } from 'react';
 import { Alert, Box, CircularProgress } from '@wso2/oxygen-ui';
 import { Box as BoxIcon } from '@wso2/oxygen-ui-icons-react';
 import WebAppPage from '../components/webapp/WebAppPage';
-import EnvironmentSelect from '../components/webapp/EnvironmentSelect';
 import EmptyListing from '../components/EmptyListing';
 import DeployedGate from '../components/runtime/DeployedGate';
 import ContainerInfoCard from '../components/containers/ContainerInfoCard';
 import { useContainers } from '../hooks/useContainers';
 import type { EnvironmentId } from '../types/webApp';
+import type { TrackRef } from '../types/track';
 
 type Notice = { type: 'success' | 'error'; message: string } | null;
 
-function ContainersContent({ webAppId, environment }: { webAppId: string; environment: EnvironmentId }): JSX.Element {
-  const { data, isLoading, isError } = useContainers(webAppId, environment);
+function ContainersContent({ track, environment }: { track: TrackRef; environment: EnvironmentId }): JSX.Element {
+  const { data, isLoading, isError } = useContainers(track, environment);
   const [notice, setNotice] = useState<Notice>(null);
 
   if (isLoading) {
@@ -36,20 +36,19 @@ function ContainersContent({ webAppId, environment }: { webAppId: string; enviro
         </Alert>
       )}
       {data.map((c) => (
-        <ContainerInfoCard key={c.id} container={c} webAppId={webAppId} environment={environment} onSaved={(message) => setNotice({ type: 'success', message })} onError={(message) => setNotice({ type: 'error', message })} />
+        <ContainerInfoCard key={c.id} container={c} track={track} environment={environment} onSaved={(message) => setNotice({ type: 'success', message })} onError={(message) => setNotice({ type: 'error', message })} />
       ))}
     </>
   );
 }
 
 export default function WebAppContainers(): JSX.Element {
-  const [env, setEnv] = useState<EnvironmentId>('development');
   return (
-    <WebAppPage title="Containers" description="Image, ports and resources of the web app's containers." actions={<EnvironmentSelect value={env} onChange={setEnv} />}>
-      {({ webApp }) => (
-        <DeployedGate webAppId={webApp.id} environment={env}>
-          {/* key resets notices when the environment changes */}
-          <ContainersContent key={env} webAppId={webApp.id} environment={env} />
+    <WebAppPage title="Containers" description="Image, ports and resources of the web app's containers." withEnvironment>
+      {({ track, environment, environmentName }) => (
+        <DeployedGate track={track} environment={environment} environmentName={environmentName}>
+          {/* key resets notices when the track or environment changes */}
+          <ContainersContent key={`${track.trackId}:${environment}`} track={track} environment={environment} />
         </DeployedGate>
       )}
     </WebAppPage>
