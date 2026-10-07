@@ -1,0 +1,1565 @@
+openapi: 3.0.3
+info:
+  title: WSO2 Web App Hosting BFF API
+  version: 1.0.0
+  description: |
+    Backend-for-frontend of the Web App Hosting console. The console's
+    `frontend/src/api/*.ts` functions are the contract; DTO shapes match
+    `frontend/src/types/*.ts`.
+
+    - Org scoping comes from the caller's JWT (`ouId`/`ouHandle`) on WSO2 Cloud,
+      or the configured namespace on a local OpenChoreo.
+    - A web app is a set of deployment tracks; a track (one branch) is one
+      OpenChoreo Component, identified by `trackId` (the Component name).
+    - Errors use `{code, message}`. `402 QUOTA_EXCEEDED` = the plan's track quota
+      is reached (PAS entitlement gate); `501 NOT_SUPPORTED` = a P1/P2 feature.
+servers:
+  - url: /webapp-hosting/api/v1
+security:
+  - bearerAuth: []
+paths:
+  /meta:
+    get:
+      operationId: getMeta
+      summary: Target / org info for the console
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Meta'
+        default:
+          $ref: '#/components/responses/Error'
+  /projects:
+    get:
+      operationId: listProjects
+      summary: List projects (creates the default project on first login)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Project'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createProject
+      summary: Create a project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectInput'
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        default:
+          $ref: '#/components/responses/Error'
+  /projects/{projectId}:
+    get:
+      operationId: getProject
+      summary: Get a project
+      parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        default:
+          $ref: '#/components/responses/Error'
+  /projects/{projectId}/environments:
+    get:
+      operationId: listProjectEnvironments
+      summary: Pipeline environments in promotion order
+      parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Environment'
+        default:
+          $ref: '#/components/responses/Error'
+  /projects/{projectId}/webapps:
+    get:
+      operationId: listWebApps
+      summary: List web apps
+      parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WebApp'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createWebApp
+      summary: Create a web app (default track Component + first build). 402 QUOTA_EXCEEDED when over the plan's track quota.
+      parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWebAppInput'
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebApp'
+        default:
+          $ref: '#/components/responses/Error'
+  /projects/{projectId}/webapps/{webAppId}:
+    get:
+      operationId: getWebApp
+      summary: Get a web app
+      parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebApp'
+        default:
+          $ref: '#/components/responses/Error'
+  /git/github/installations:
+    get:
+      operationId: listGitHubInstallations
+      summary: GitHub App installations of the org (empty locally)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstallationList'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: bindGitHubInstallations
+      summary: Exchange the GitHub OAuth code and bind installations (WSO2 Cloud only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BindInstallationRequest'
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstallationList'
+        default:
+          $ref: '#/components/responses/Error'
+  /git/github/repos:
+    get:
+      operationId: listGitHubRepos
+      summary: Repositories of an installation (WSO2 Cloud only)
+      parameters:
+      - name: installationId
+        in: query
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositoryList'
+        default:
+          $ref: '#/components/responses/Error'
+  /git/branches:
+    get:
+      operationId: listRepoBranches
+      summary: Branches of a repository (public URL, or installation + owner/repo)
+      parameters:
+      - name: repoUrl
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: installationId
+        in: query
+        required: false
+        schema:
+          type: integer
+      - name: owner
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: repo
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/branches:
+    get:
+      operationId: listWebAppBranches
+      summary: Branches of the web app's repository
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks:
+    get:
+      operationId: listTracks
+      summary: List deployment tracks
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DeploymentTrack'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createTrack
+      summary: Create a track from a branch (new Component, first build). 402 QUOTA_EXCEEDED when over quota.
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTrackInput'
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeploymentTrack'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}:
+    delete:
+      operationId: deleteTrack
+      summary: Delete an undeployed, non-default track
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: No content
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/deletable:
+    get:
+      operationId: checkTrackDeletable
+      summary: Whether a track can be deleted
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackDeletableResult'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/auto-deploy:
+    put:
+      operationId: setTrackAutoDeploy
+      summary: Toggle auto-deploy to the first environment after successful builds
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AutoDeployInput'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeploymentTrack'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/builds:
+    get:
+      operationId: listBuilds
+      summary: List builds, newest first (steps without logs)
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BuildRun'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: triggerBuild
+      summary: Trigger a build of the branch head (or a given sha)
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TriggerBuildInput'
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BuildRun'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/builds/{buildId}/logs:
+    get:
+      operationId: getBuildLogs
+      summary: Build steps with logs (live, else archived)
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: buildId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BuildRun'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/build-config:
+    get:
+      operationId: getBuildConfig
+      summary: Build settings
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BuildConfig'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/latest-commit:
+    get:
+      operationId: getLatestCommit
+      summary: Head commit of the track's branch
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LatestCommit'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/environments:
+    get:
+      operationId: listTrackEnvironments
+      summary: Per-environment deployment summary
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EnvironmentDeployment'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/deployments:
+    get:
+      operationId: listDeployments
+      summary: Current deployment per environment
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Deployment'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: deployBuild
+      summary: Deploy a build to an environment
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeployBuildInput'
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deployment'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/deployments/promote:
+    post:
+      operationId: promoteDeployment
+      summary: Promote the release running in one environment to another
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PromoteInput'
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deployment'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/environments/{env}/redeploy:
+    post:
+      operationId: redeployEnvironment
+      summary: Reactivate a stopped deployment or rolling-restart a running one
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: env
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deployment'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/environments/{env}/stop:
+    post:
+      operationId: stopEnvironment
+      summary: Stop (undeploy) an environment
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: env
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deployment'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/environments/{env}/release:
+    get:
+      operationId: getReleaseDetails
+      summary: What runs in the environment
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: env
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReleaseDetails'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/environments/{env}/pods:
+    get:
+      operationId: listPods
+      summary: Pods of the environment
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: env
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Pod'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/environments/{env}/pods/{pod}/events:
+    get:
+      operationId: listPodEvents
+      summary: Kubernetes events of a pod
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: env
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: pod
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PodEvent'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/environments/{env}/pods/{pod}/logs:
+    get:
+      operationId: getPodLogs
+      summary: Recent log lines of a pod
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: env
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: pod
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/environments/{env}/containers:
+    get:
+      operationId: listContainers
+      summary: The environment's container
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: env
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Container'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/environments/{env}/containers/{containerId}:
+    put:
+      operationId: updateContainer
+      summary: 'Update resources / pull policy (command & args: 501 NOT_SUPPORTED)'
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: env
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: containerId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContainerUpdate'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Container'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/environments/{env}/scaling:
+    get:
+      operationId: getScaling
+      summary: 'Scaling (P0: fixed replicas)'
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: env
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScalingConfig'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      operationId: updateScaling
+      summary: 'Set fixed replicas 1..5 (HPA: 501 NOT_SUPPORTED)'
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: env
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScalingConfig'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScalingConfig'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/environments/{env}/replicas:
+    get:
+      operationId: listReplicas
+      summary: Replica pods
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: env
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ReplicaPod'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/environments/{env}/configs:
+    get:
+      operationId: listConfigs
+      summary: Configs, secrets (masked) and files
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: env
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ConfigItem'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: createConfig
+      summary: Create a config / secret / file
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: env
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfigWrite'
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigItem'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/environments/{env}/configs/{configId}:
+    put:
+      operationId: updateConfig
+      summary: Replace a config / secret / file
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: env
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: configId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfigWrite'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigItem'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteConfig
+      summary: Delete a config / secret / file
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: env
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: configId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: No content
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/logs/query:
+    post:
+      operationId: queryRuntimeLogs
+      summary: Query archived runtime logs (time-cursor paging)
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogsRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogsPage'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/urls:
+    get:
+      operationId: listDefaultUrls
+      summary: Default URL per environment ('' when not deployed)
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EnvironmentDefaultUrl'
+        default:
+          $ref: '#/components/responses/Error'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [BAD_REQUEST, UNAUTHORIZED, FORBIDDEN, NO_ORGANIZATION, NOT_FOUND, CONFLICT, QUOTA_EXCEEDED, NOT_SUPPORTED, UPSTREAM_ERROR]
+        message: {type: string}
+    Meta:
+      type: object
+      properties:
+        target: {type: string, enum: [wso2cloud, openchoreo]}
+        gitHubApp: {type: boolean}
+        billingEnabled: {type: boolean}
+        orgHandle: {type: string}
+        namespace: {type: string}
+    Project:
+      type: object
+      required: [id, handler, name, updatedAt, activeWebAppCount, status]
+      properties:
+        id: {type: string}
+        handler: {type: string}
+        name: {type: string}
+        description: {type: string}
+        updatedAt: {type: string, format: date-time}
+        activeWebAppCount: {type: integer}
+        status: {type: string, enum: [active, deploying]}
+    CreateProjectInput:
+      type: object
+      required: [name, handler]
+      properties:
+        name: {type: string}
+        handler: {type: string, pattern: "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"}
+        description: {type: string}
+    Environment:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        isProduction: {type: boolean}
+    Commit:
+      type: object
+      properties:
+        sha: {type: string}
+        message: {type: string}
+        author: {type: string}
+        committedAt: {type: string}
+    WebApp:
+      type: object
+      required: [id, handler, displayName, framework, buildPreset, status, updatedAt, sourceType, projectId, defaultTrackId]
+      properties:
+        id: {type: string}
+        handler: {type: string}
+        displayName: {type: string}
+        description: {type: string}
+        framework: {type: string}
+        buildPreset: {$ref: "#/components/schemas/BuildPreset"}
+        url: {type: string}
+        status: {type: string, enum: [active, deploying, not-deployed, failed]}
+        updatedAt: {type: string}
+        sourceType: {type: string, enum: [github, public-git]}
+        repoUrl: {type: string}
+        projectId: {type: string}
+        defaultTrackId: {type: string}
+        latestCommit: {$ref: "#/components/schemas/Commit"}
+    BuildPreset:
+      type: string
+      enum: [nodejs, react, angular, dotnet, vuejs, python, go, ruby, php, springboot, static, docker]
+    CreateWebAppInput:
+      type: object
+      required: [sourceType, repository, branch, displayName, handler, buildPreset, port]
+      properties:
+        sourceType: {type: string, enum: [github, public-git]}
+        gitOrganization: {type: string}
+        repository: {type: string, description: "repo name, org/repo or full GitHub URL"}
+        installationId: {type: integer, format: int64, description: "GitHub App installation (sourceType github)"}
+        branch: {type: string}
+        componentDirectory: {type: string}
+        displayName: {type: string}
+        handler: {type: string, pattern: "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", maxLength: 40}
+        description: {type: string}
+        buildPreset: {$ref: "#/components/schemas/BuildPreset"}
+        buildCommand: {type: string}
+        buildPath: {type: string}
+        nodeVersion: {type: string}
+        port: {type: integer}
+    BindInstallationRequest:
+      type: object
+      required: [code]
+      properties:
+        code: {type: string}
+    InstallationList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              installationId: {type: integer, format: int64}
+              githubAccount: {type: string}
+    RepositoryList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              fullName: {type: string}
+              name: {type: string}
+              owner: {type: string}
+              private: {type: boolean}
+              defaultBranch: {type: string}
+    DeploymentTrack:
+      type: object
+      properties:
+        id: {type: string}
+        branch: {type: string}
+        isDefault: {type: boolean}
+        autoDeploy: {type: boolean}
+        deployed: {type: boolean}
+        createdAt: {type: string}
+    CreateTrackInput:
+      type: object
+      required: [branch]
+      properties:
+        branch: {type: string}
+    AutoDeployInput:
+      type: object
+      required: [autoDeploy]
+      properties:
+        autoDeploy: {type: boolean}
+    TrackDeletableResult:
+      type: object
+      properties:
+        canDelete: {type: boolean}
+        message: {type: string}
+    BuildStep:
+      type: object
+      properties:
+        name: {type: string}
+        status: {type: string, enum: [success, failed, in-progress, pending]}
+        logs: {type: array, items: {type: string}}
+    BuildRun:
+      type: object
+      properties:
+        id: {type: string}
+        status: {type: string, enum: [success, failed, in-progress]}
+        commitSha: {type: string}
+        commitMessage: {type: string}
+        author: {type: string}
+        branch: {type: string}
+        triggeredAt: {type: string}
+        completedAt: {type: string}
+        steps: {type: array, items: {$ref: "#/components/schemas/BuildStep"}}
+    TriggerBuildInput:
+      type: object
+      properties:
+        sha: {type: string}
+    BuildConfig:
+      type: object
+      properties:
+        repoUrl: {type: string}
+        branch: {type: string}
+        componentDirectory: {type: string}
+        buildPreset: {$ref: "#/components/schemas/BuildPreset"}
+        buildCommand: {type: string}
+        buildPath: {type: string}
+        nodeVersion: {type: string}
+        port: {type: integer}
+    LatestCommit:
+      type: object
+      properties:
+        sha: {type: string}
+        message: {type: string}
+        author: {type: string}
+        committedAt: {type: string}
+        branch: {type: string}
+        repoUrl: {type: string}
+    EnvironmentDeployment:
+      type: object
+      properties:
+        environment: {type: string}
+        deployed: {type: boolean}
+        status: {type: string, enum: [active, deploying, not-deployed, failed]}
+    Deployment:
+      type: object
+      properties:
+        id: {type: string}
+        environment: {type: string}
+        buildId: {type: string}
+        commitSha: {type: string}
+        commitMessage: {type: string}
+        status: {type: string, enum: [deploying, active, failed, stopped]}
+        deployedAt: {type: string}
+        url: {type: string}
+    DeployBuildInput:
+      type: object
+      required: [environment, build]
+      properties:
+        environment: {type: string}
+        build:
+          type: object
+          required: [id]
+          properties:
+            id: {type: string}
+    PromoteInput:
+      type: object
+      required: [sourceEnvironment, targetEnvironment]
+      properties:
+        sourceEnvironment: {type: string}
+        targetEnvironment: {type: string}
+    ReleaseDetails:
+      type: object
+      properties:
+        status: {type: string, enum: [Running, Deploying, Failed]}
+        image: {type: string}
+        commitSha: {type: string}
+        commitMessage: {type: string}
+        deployedAt: {type: string}
+        port: {type: integer}
+    Pod:
+      type: object
+      properties:
+        name: {type: string}
+        phase: {type: string}
+        ready: {type: string}
+        restarts: {type: integer}
+        startedAt: {type: string}
+        cpuUsageMillicores: {type: integer}
+        cpuLimitMillicores: {type: integer}
+        memoryUsageBytes: {type: integer}
+        memoryLimitBytes: {type: integer}
+        conditions:
+          type: array
+          items:
+            type: object
+            properties:
+              type: {type: string}
+              status: {type: string}
+              lastTransitionTime: {type: string}
+    PodEvent:
+      type: object
+      properties:
+        type: {type: string}
+        reason: {type: string}
+        message: {type: string}
+        count: {type: integer}
+        lastSeen: {type: string}
+    Container:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        image: {type: string}
+        imagePullPolicy: {type: string, enum: [Always, IfNotPresent]}
+        ports:
+          type: array
+          items:
+            type: object
+            properties:
+              protocol: {type: string}
+              port: {type: integer}
+        cpuRequest: {type: integer, description: millicores}
+        cpuLimit: {type: integer}
+        memoryRequest: {type: integer, description: MiB}
+        memoryLimit: {type: integer}
+        command: {type: array, items: {type: string}}
+        args: {type: array, items: {type: string}}
+        updatedAt: {type: string}
+    ContainerUpdate:
+      type: object
+      properties:
+        imagePullPolicy: {type: string, enum: [Always, IfNotPresent]}
+        cpuRequest: {type: integer}
+        cpuLimit: {type: integer}
+        memoryRequest: {type: integer}
+        memoryLimit: {type: integer}
+        command: {type: array, items: {type: string}}
+        args: {type: array, items: {type: string}}
+    ScalingConfig:
+      type: object
+      properties:
+        method: {type: string, enum: [HPA, None]}
+        fixedReplicas: {type: integer, minimum: 1, maximum: 5}
+        hpa:
+          type: object
+          properties:
+            minReplicas: {type: integer}
+            maxReplicas: {type: integer}
+            cpuUtilization: {type: integer}
+            memoryUtilization: {type: integer}
+    ReplicaPod:
+      type: object
+      properties:
+        name: {type: string}
+        status: {type: string}
+        readyContainers: {type: integer}
+        totalContainers: {type: integer}
+        restarts: {type: integer}
+        cpuUsage: {type: number}
+        memoryUsageMb: {type: number}
+        startedAt: {type: string}
+    ConfigEntry:
+      type: object
+      properties:
+        key: {type: string}
+        value: {type: string}
+        masked: {type: boolean}
+    ConfigItem:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        kind: {type: string, enum: [config, secret, file]}
+        mountPath: {type: string, description: "file kind: directory the file is mounted in (SPA default /usr/share/nginx/html)"}
+        entries: {type: array, items: {$ref: "#/components/schemas/ConfigEntry"}}
+        updatedAt: {type: string}
+    ConfigWrite:
+      type: object
+      required: [name, kind, entries]
+      properties:
+        name: {type: string}
+        kind: {type: string, enum: [config, secret, file]}
+        mountPath: {type: string}
+        entries: {type: array, items: {$ref: "#/components/schemas/ConfigEntry"}}
+    LogsRequest:
+      type: object
+      properties:
+        environment: {type: string}
+        levels: {type: array, items: {type: string, enum: [INFO, WARN, ERROR, DEBUG]}}
+        startTime: {type: string}
+        endTime: {type: string}
+        searchPhrase: {type: string}
+        sort: {type: string, enum: [asc, desc]}
+        limit: {type: integer}
+        cursor: {type: string}
+    LogRow:
+      type: object
+      properties:
+        id: {type: string}
+        timestamp: {type: string}
+        level: {type: string}
+        logLine: {type: string}
+        source: {type: string, enum: [access, app]}
+        podName: {type: string}
+        containerName: {type: string}
+        method: {type: string}
+        path: {type: string}
+        statusCode: {type: integer}
+    LogsPage:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: "#/components/schemas/LogRow"}}
+        nextCursor: {type: string}
+    EnvironmentDefaultUrl:
+      type: object
+      properties:
+        environment: {type: string}
+        url: {type: string}

@@ -1,0 +1,19 @@
+# WSO2 Cloud CI build contract (see wso2cloud-deployment README "CI/CD").
+trigger:
+  paths:
+    include:
+      - .cicd/webapp-console.yaml
+      - "frontend/**"
+    exclude:
+      - "frontend/**/*.md"
+
+type: docker
+context: frontend
+ecrRepository: 259428491004.dkr.ecr.us-east-2.amazonaws.com/system/webapp-console
+
+workloadPaths:
+  - controlplane/common/domains/developers/namespaces/wso2cloud/projects/web-app-hosting/components/webapp-console/workload.yaml
+
+settings:
+  docker:
+    dockerFile: Dockerfile
