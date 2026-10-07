@@ -50,6 +50,8 @@ type Config struct {
 	ClientID     string
 	ClientSecret string
 	TokenScope   string
+	// TokenAuthMethod is client_secret_post (default) or client_secret_basic.
+	TokenAuthMethod string
 
 	// OpenChoreo API: on wso2cloud this is "<PAS internal URL>/wso2cloud-dp".
 	OCAPIURL string
@@ -95,6 +97,7 @@ func Load(targetOverride string) (*Config, error) {
 		ClientID:              env("OAUTH_CLIENT_ID", ""),
 		ClientSecret:          env("OAUTH_CLIENT_SECRET", ""),
 		TokenScope:            env("OAUTH_SCOPE", ""),
+		TokenAuthMethod:       env("OAUTH_TOKEN_AUTH_METHOD", "client_secret_post"),
 		OCAPIURL:              env("OC_API_URL", ""),
 		OCNamespace:           env("OC_NAMESPACE", "default"),
 		LocalOrgHandle:        env("LOCAL_ORG_HANDLE", "default"),

@@ -24,7 +24,7 @@ func Build(cfg *config.Config) (*api.Server, error) {
 	if cfg.Target == config.TargetOpenChoreo {
 		resolveLocalhostToLoopback()
 	}
-	tokens := oauth.NewTokenProvider(cfg.TokenURL, cfg.ClientID, cfg.ClientSecret, cfg.TokenScope)
+	tokens := oauth.NewTokenProvider(cfg.TokenURL, cfg.ClientID, cfg.ClientSecret, cfg.TokenScope).WithBasicAuth(cfg.TokenAuthMethod == "client_secret_basic")
 	cloud := cfg.Target == config.TargetWSO2Cloud
 	dev := cfg.AuthMode == config.AuthModeDev
 

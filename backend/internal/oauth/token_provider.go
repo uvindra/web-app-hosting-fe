@@ -37,7 +37,10 @@ type TokenProvider struct {
 	clientID     string
 	clientSecret string
 	scope        string
-	httpClient   *http.Client
+	// basicAuth sends the client credentials as HTTP Basic (client_secret_basic)
+	// instead of form fields (client_secret_post).
+	basicAuth  bool
+	httpClient *http.Client
 
 	mu        sync.Mutex
 	token     string
@@ -50,6 +53,13 @@ func NewTokenProvider(tokenURL, clientID, clientSecret, scope string) *TokenProv
 		tokenURL: tokenURL, clientID: clientID, clientSecret: clientSecret, scope: scope,
 		httpClient: &http.Client{Timeout: 15 * time.Second},
 	}
+}
+
+// WithBasicAuth switches the provider to client_secret_basic (WSO2 Cloud's
+// platform IdP registers M2M apps that way).
+func (p *TokenProvider) WithBasicAuth(on bool) *TokenProvider {
+	p.basicAuth = on
+	return p
 }
 
 // Token returns a valid access token, refreshing when it is within 60s of expiry.
@@ -70,10 +80,10 @@ func (p *TokenProvider) Invalidate() {
 }
 
 func (p *TokenProvider) fetchLocked() (string, error) {
-	data := url.Values{
-		"grant_type":    {"client_credentials"},
-		"client_id":     {p.clientID},
-		"client_secret": {p.clientSecret},
+	data := url.Values{"grant_type": {"client_credentials"}}
+	if !p.basicAuth {
+		data.Set("client_id", p.clientID)
+		data.Set("client_secret", p.clientSecret)
 	}
 	if p.scope != "" {
 		data.Set("scope", p.scope)
@@ -83,6 +93,9 @@ func (p *TokenProvider) fetchLocked() (string, error) {
 		return "", fmt.Errorf("create token request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if p.basicAuth {
+		req.SetBasicAuth(url.QueryEscape(p.clientID), url.QueryEscape(p.clientSecret))
+	}
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("token request: %w", err)
