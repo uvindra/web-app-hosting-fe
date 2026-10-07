@@ -130,6 +130,16 @@ ipaas has no equivalent — it always requires its real dev IdP.
 
 ## Changelog
 
+### 2026-10-07 — Monorepo layout
+
+- **Why:** the repo is now a monorepo for the FE and its BFF, since the backend is a BFF for this front end.
+- **Moves:**
+  - All front-end code and config moved into `frontend/` with `git mv`, so history is kept: `src/`, `public/`, `package.json`, the lockfile, `pnpm-workspace.yaml`, the TS/Vite/Vitest/ESLint/Prettier configs and `index.html`.
+  - `backend/` was added for the Go BFF; it's empty, with a `.gitkeep`.
+  - The Markdown docs (`CLAUDE.md`, this file) and `.gitignore` stay at the repo root.
+- **Paths:** paths in this file are relative to `frontend/` unless stated otherwise. `pnpm` commands run from `frontend/`.
+- The repo may be renamed later.
+
 ### 2026-10-06 — Metrics: removed the 7-day range
 
 - Dropped `'7d'` from `MetricsRange` / `METRICS_RANGES` and `RANGE_CONFIG`. Prometheus on the WSO2 Cloud observability plane keeps metrics for 3 days by default (`prometheus_metrics_retention_time`), so a 7-day window would be mostly empty. The longest range is now 24 hours.

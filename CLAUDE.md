@@ -9,6 +9,17 @@ A new, standalone front end for **WSO2 Web App Hosting**, built from a set of wi
 reusing the tech stack and patterns of `integration-control-plane/ipaas` (a sibling WSO2 Cloud
 product front end) — cloning only what's generic, not anything integration/Ballerina/MI-specific.
 
+## Repo layout (monorepo)
+
+| Path | Contents |
+|---|---|
+| `frontend/` | The React app: `package.json`, `src/`, `public/`, configs. |
+| `backend/` | The Web App Hosting BFF (Go). Empty until P0 lands. |
+| Root | Shared docs: this file, `ADAPTATION_NOTES.md`. |
+
+- Unless stated otherwise, every `src/...`, `public/...` and config path in this file and in `ADAPTATION_NOTES.md` is relative to `frontend/`.
+- Run all `pnpm` commands from `frontend/`.
+
 **Read `ADAPTATION_NOTES.md` first** for the actual current state of the app: what deliberately
 differs from ipaas, what's stubbed pending a real backend, and a dated changelog of what's been
 built. It is the living source of truth — this file is not.
@@ -78,6 +89,8 @@ a time; the `src/hooks/*.ts` layer above it shouldn't need to change.
   guards / early returns.
 
 ## Local development
+
+All commands below run from `frontend/`.
 
 - `pnpm dev` — dev server on `https://localhost:3000` (self-signed cert, one-time browser
   warning). No real IdP is configured (`public/config.json`'s Asgardeo/GitHub values are
