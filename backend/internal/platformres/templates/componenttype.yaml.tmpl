@@ -1,0 +1,255 @@
+# Web App Hosting ComponentType `deployment/web-app-hosting` (decisions D2a, D5, D8, D9, D10).
+#
+# Based on the WSO2 Cloud customer `web-application` ComponentType (PAS bootstrap
+# v1.8 15-web-application_componenttype.yaml), plus:
+#   - container env / envFrom / volumeMounts (modelled on 12-service_componenttype.yaml),
+#     so configs, secrets and file mounts (e.g. SPA config.js) reach the pod;
+#   - an in-memory /tmp emptyDir — the only writable path under readOnlyRootFilesystem;
+#   - default resources request 350Mi / limit 1Gi (shared by the app and /tmp);
+#   - replicas 1..5 (no scale-to-zero, D6);
+#   - our namespaced SPA workflow + the Paketo/GCP/Dockerfile ClusterWorkflows.
+#
+# Rendered by the BFF with Go text/template using double-square-bracket delimiters (CEL uses ${ }
+# and Argo uses {{ }}). Profile switches:
+#   .RegistryPullSecret — WSO2 Cloud pulls user images from the customer registry
+#                         through the `registry-pull-secret` ExternalSecret; plain
+#                         OpenChoreo (local k3d) pulls from its in-cluster registry.
+apiVersion: openchoreo.dev/v1alpha1
+kind: ComponentType
+metadata:
+  name: web-app-hosting
+  annotations:
+    openchoreo.dev/display-name: Web App Hosting
+    openchoreo.dev/description: Web app (SPA, static or server) hosted by WSO2 Web App Hosting
+    web-app-hosting.wso2.com/ct-version: "[[ .Version ]]"
+  labels:
+    openchoreo.dev/name: web-app-hosting
+spec:
+  workloadType: deployment
+  allowedWorkflows:
+    - kind: Workflow
+      name: web-app-hosting-spa-builder
+    - kind: ClusterWorkflow
+      name: paketo-buildpacks-builder
+    - kind: ClusterWorkflow
+      name: gcp-buildpacks-builder
+    - kind: ClusterWorkflow
+      name: dockerfile-builder
+  validations:
+    - rule: '${size(workload.endpoints) > 0}'
+      message: "Web apps must have at least one endpoint."
+  parameters:
+    openAPIV3Schema:
+      type: object
+      properties:
+        containerName:
+          type: string
+          default: main
+  environmentConfigs:
+    openAPIV3Schema:
+      type: object
+      properties:
+        replicas:
+          type: integer
+          default: 1
+          minimum: 1
+          maximum: 5
+        resources:
+          type: object
+          default: {}
+          properties:
+            requests:
+              type: object
+              default: {}
+              properties:
+                cpu:
+                  type: string
+                  default: 100m
+                memory:
+                  type: string
+                  default: 350Mi
+            limits:
+              type: object
+              default: {}
+              properties:
+                cpu:
+                  type: string
+                  default: 100m
+                memory:
+                  type: string
+                  default: 1Gi
+        imagePullPolicy:
+          type: string
+          default: IfNotPresent
+  resources:
+    - id: deployment
+      template:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: '${metadata.name}'
+          namespace: '${metadata.namespace}'
+          labels: '${metadata.labels}'
+        spec:
+          replicas: '${environmentConfigs.replicas}'
+          selector:
+            matchLabels: '${metadata.podSelectors}'
+          template:
+            metadata:
+              labels: '${metadata.podSelectors}'
+            spec:
+[[- if .RegistryPullSecret ]]
+              imagePullSecrets:
+                - name: registry-pull-secret
+[[- end ]]
+              automountServiceAccountToken: false
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 65534
+                fsGroup: 65534
+              containers:
+                - name: '${parameters.containerName}'
+                  image: '${workload.container.image}'
+                  imagePullPolicy: '${environmentConfigs.imagePullPolicy}'
+                  command: '${has(workload.container.command) ? workload.container.command : oc_omit()}'
+                  args: '${has(workload.container.args) ? workload.container.args : oc_omit()}'
+                  ports: '${workload.endpoints.map(endpoint, {"name": endpoint, "containerPort": workload.endpoints[endpoint].port, "protocol": workload.endpoints[endpoint].type == "UDP" ? "UDP" : "TCP"})}'
+                  securityContext:
+                    readOnlyRootFilesystem: true
+                    allowPrivilegeEscalation: false
+                    capabilities:
+                      drop:
+                        - ALL
+                  resources:
+                    requests:
+                      cpu: '${environmentConfigs.resources.requests.cpu}'
+                      memory: '${environmentConfigs.resources.requests.memory}'
+                    limits:
+                      cpu: '${environmentConfigs.resources.limits.cpu}'
+                      memory: '${environmentConfigs.resources.limits.memory}'
+                  env: '${dependencies.toContainerEnvs()}'
+                  envFrom: '${configurations.toContainerEnvFrom()}'
+                  volumeMounts: '${dyn(configurations.toContainerVolumeMounts()) + [{"name": "tmp", "mountPath": "/tmp"}]}'
+              volumes: '${dyn(configurations.toVolumes()) + [{"name": "tmp", "emptyDir": {"medium": "Memory", "sizeLimit": "1Gi"}}]}'
+    - id: service
+      includeWhen: '${size(workload.endpoints) > 0}'
+      template:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: '${metadata.componentName}'
+          namespace: '${metadata.namespace}'
+          labels: '${metadata.labels}'
+        spec:
+          type: ClusterIP
+          selector: '${metadata.podSelectors}'
+          ports: '${workload.toServicePorts()}'
+    # One route per external endpoint, on its own subdomain of the DataPlane wildcard host, served from `/`
+    # (same as the customer web-application CT).
+    - id: httproute-external
+      forEach: '${workload.endpoints.transformList(name, ep, ("external" in ep.visibility && ep.type in ["HTTP", "REST", "GraphQL", "Websocket"]) ? [name] : []).flatten()}'
+      var: endpoint
+      template:
+        apiVersion: gateway.networking.k8s.io/v1
+        kind: HTTPRoute
+        metadata:
+          name: ${oc_generate_name(metadata.componentName, endpoint)}
+          namespace: ${metadata.namespace}
+          labels: '${oc_merge(metadata.labels, {"openchoreo.dev/endpoint-name": endpoint, "openchoreo.dev/endpoint-visibility": "external"})}'
+        spec:
+          parentRefs:
+            - name: ${dataplane.gateway.ingress.external.name}
+              namespace: ${dataplane.gateway.ingress.external.namespace}
+          hostnames: |
+            ${[dataplane.gateway.ingress.external.?http, dataplane.gateway.ingress.external.?https]
+              .filter(g, g.hasValue()).map(g, g.value().host).distinct()
+              .map(h, oc_dns_label(endpoint, metadata.componentName, metadata.environmentName, metadata.componentNamespace) + "." + h)}
+          rules:
+            - backendRefs:
+                - name: ${metadata.componentName}
+                  port: ${workload.endpoints[endpoint].port}
+    - id: env-config
+      forEach: '${configurations.toConfigEnvsByContainer()}'
+      var: envConfig
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${envConfig.resourceName}'
+          namespace: '${metadata.namespace}'
+        data: '${envConfig.envs.transformMapEntry(index, env, {env.name: env.value})}'
+    - id: file-config
+      forEach: '${configurations.toConfigFileList()}'
+      var: config
+      template:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: '${config.resourceName}'
+          namespace: '${metadata.namespace}'
+        data:
+          '${config.name}': '${config.value}'
+    - id: secret-env-external
+      forEach: '${configurations.toSecretEnvsByContainer()}'
+      var: secretEnv
+      template:
+        apiVersion: external-secrets.io/v1
+        kind: ExternalSecret
+        metadata:
+          name: '${secretEnv.resourceName}'
+          namespace: '${metadata.namespace}'
+        spec:
+          refreshInterval: 15s
+          secretStoreRef:
+            name: '${dataplane.secretStore}'
+            kind: ClusterSecretStore
+          target:
+            name: '${secretEnv.resourceName}'
+            creationPolicy: Owner
+          data: '${secretEnv.envs.map(secret, {"secretKey": secret.name, "remoteRef": {"key": secret.remoteRef.key, "property": has(secret.remoteRef.property) ? secret.remoteRef.property : oc_omit()}})}'
+    - id: secret-file-external
+      forEach: '${configurations.toSecretFileList()}'
+      var: file
+      template:
+        apiVersion: external-secrets.io/v1
+        kind: ExternalSecret
+        metadata:
+          name: '${file.resourceName}'
+          namespace: '${metadata.namespace}'
+        spec:
+          refreshInterval: 15s
+          secretStoreRef:
+            name: '${dataplane.secretStore}'
+            kind: ClusterSecretStore
+          target:
+            name: '${file.resourceName}'
+            creationPolicy: Owner
+          data:
+            - secretKey: '${file.name}'
+              remoteRef:
+                key: '${file.remoteRef.key}'
+                property: '${has(file.remoteRef.property) ? file.remoteRef.property : oc_omit()}'
+[[- if .RegistryPullSecret ]]
+    - id: registry-pull-secret
+      template:
+        apiVersion: external-secrets.io/v1
+        kind: ExternalSecret
+        metadata:
+          name: registry-pull-secret
+          namespace: '${metadata.namespace}'
+        spec:
+          refreshInterval: 15s
+          secretStoreRef:
+            name: secretstore-read
+            kind: ClusterSecretStore
+          target:
+            name: registry-pull-secret
+            creationPolicy: Owner
+            template:
+              type: kubernetes.io/dockerconfigjson
+          data:
+            - secretKey: .dockerconfigjson
+              remoteRef:
+                key: automation/registry-access-credentials-userapps
+                property: .dockerconfigjson
+[[- end ]]

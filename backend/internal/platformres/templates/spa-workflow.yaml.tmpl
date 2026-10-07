@@ -1,0 +1,437 @@
+# Web App Hosting SPA/static build workflow `web-app-hosting-spa-builder` (D8).
+#
+# A namespaced OpenChoreo Workflow, upserted per org together with our
+# ComponentType (D9). Steps:
+#   1. checkout-source     (ClusterWorkflowTemplate)
+#   2. generate-spa-files  (inline step) — writes a Dockerfile + nginx conf under
+#      <appPath>/.web-app-hosting/ and a workload.yaml descriptor at <appPath>
+#      (HTTP endpoint 8080, external), so generate-workload always declares the endpoint
+#   3. containerfile-build (ClusterWorkflowTemplate)
+#   4. publish-image       (ClusterWorkflowTemplate)
+#   5. generate-workload   (ClusterWorkflowTemplate)
+#
+# The generated image is two/three stages: (optional) `node:<nodeVersion>` running the
+# install + build command in appPath, a scrub stage (drops .git, makes files world
+# readable) and `nginxinc/nginx-unprivileged` serving the output dir on 8080 with SPA
+# fallback. A blank build command = static site (no node stage).
+#
+# NOTE: OpenChoreo renders ${...} as CEL anywhere in this document and Argo renders
+# {{...}}, so the inline shell below never uses ${VAR} or {{ }} of its own.
+#
+# Rendered by the BFF with Go text/template, double-square-bracket delimiters. Profile switches:
+#   .Cloud — WSO2 Cloud (OC 1.2.5): ECR push secrets from `secretstore-read`, metering
+#            pod labels, `ci` storage class, generate-workload `environment-variables`
+#            argument. Otherwise plain OpenChoreo 1.3 (local k3d): in-cluster registry
+#            push secret and the source-provenance generate-workload arguments.
+apiVersion: openchoreo.dev/v1alpha1
+kind: Workflow
+metadata:
+  name: web-app-hosting-spa-builder
+  labels:
+    openchoreo.dev/workflow-type: "component"
+  annotations:
+    openchoreo.dev/description: "Build a single-page or static web app and serve it with nginx-unprivileged"
+    web-app-hosting.wso2.com/ct-version: "[[ .Version ]]"
+spec:
+  workflowPlaneRef:
+    kind: ClusterWorkflowPlane
+    name: default
+  ttlAfterCompletion: "1d"
+  parameters:
+    openAPIV3Schema:
+      type: object
+      required:
+        - repository
+      properties:
+        repository:
+          type: object
+          description: "Git repository configuration"
+          required:
+            - url
+          properties:
+            url:
+              type: string
+              description: "Git repository URL"
+              x-openchoreo-component-parameter-repository-url: true
+            secretRef:
+              type: string
+              default: ""
+              description: "Secret reference name for Git credentials"
+              x-openchoreo-component-parameter-repository-secret-ref: true
+            revision:
+              type: object
+              default: {}
+              properties:
+                branch:
+                  type: string
+                  default: main
+                  x-openchoreo-component-parameter-repository-branch: true
+                commit:
+                  type: string
+                  default: ""
+                  x-openchoreo-component-parameter-repository-commit: true
+            appPath:
+              type: string
+              default: "."
+              x-openchoreo-component-parameter-repository-app-path: true
+        spa:
+          type: object
+          default: {}
+          description: "SPA / static site build settings"
+          properties:
+            nodeVersion:
+              type: string
+              default: "20"
+              description: "Node.js major version of the build stage image (node:<nodeVersion>-slim)"
+            buildCommand:
+              type: string
+              default: "npm run build"
+              description: "Build command run in appPath after installing dependencies. Empty = static site, no build."
+            outputDir:
+              type: string
+              default: "build"
+              description: "Build output directory, relative to appPath"
+  runTemplate:
+    apiVersion: argoproj.io/v1alpha1
+    kind: Workflow
+    metadata:
+      name: ${metadata.workflowRunName}
+      namespace: ${metadata.namespace}
+    spec:
+[[- if .Cloud ]]
+      podMetadata:
+        labels:
+          openchoreo.dev/namespace: ${metadata.namespaceName}
+          openchoreo.dev/project: ${metadata.labels['openchoreo.dev/project']}
+          openchoreo.dev/component: ${metadata.labels['openchoreo.dev/component']}
+          cloud.wso2.com/orguuid: ${metadata.labels['cloud.wso2.com/orguuid']}
+          cloud.wso2.com/product-name: ${metadata.labels['cloud.wso2.com/product-name']}
+          cloud.wso2.com/workload-kind: build
+[[- end ]]
+      arguments:
+        parameters:
+          - name: component-name
+            value: ${metadata.labels['openchoreo.dev/component']}
+          - name: project-name
+            value: ${metadata.labels['openchoreo.dev/project']}
+          - name: workflowrun-name
+            value: ${metadata.workflowRunName}
+          - name: namespace-name
+            value: ${metadata.namespaceName}
+          - name: git-repo
+            value: ${parameters.repository.url}
+          - name: branch
+            value: ${parameters.repository.revision.branch}
+          - name: commit
+            value: ${parameters.repository.revision.commit}
+          - name: app-path
+            value: ${parameters.repository.appPath}
+          - name: docker-context
+            value: ${parameters.repository.appPath}
+          - name: dockerfile-path
+            value: ${parameters.repository.appPath + "/.web-app-hosting/Dockerfile"}
+          - name: node-version
+            value: ${parameters.spa.nodeVersion}
+          - name: build-command
+            value: ${parameters.spa.buildCommand}
+          - name: output-dir
+            value: ${parameters.spa.outputDir}
+          - name: build-env
+            value: ${[]}
+          - name: build-args
+            value: ${[]}
+[[- if .Cloud ]]
+          - name: environment-variables
+            value: ${[]}
+[[- end ]]
+          - name: image-name
+            value: ${metadata.namespaceName}-${metadata.labels['openchoreo.dev/project']}-${metadata.labels['openchoreo.dev/component']}
+          - name: image-tag
+            value: v1
+          - name: git-secret
+            value: ${metadata.workflowRunName}-git-secret
+          - name: registry-push-secret
+            value: ${metadata.workflowRunName}-registry-push-secret
+      serviceAccountName: workflow-sa
+      entrypoint: build-workflow
+      templates:
+        - name: build-workflow
+          steps:
+            - - name: checkout-source
+                templateRef:
+                  name: checkout-source
+                  clusterScope: true
+                  template: checkout
+            - - name: generate-spa-files
+                template: generate-spa-files
+            - - name: build-image
+                templateRef:
+                  name: containerfile-build
+                  clusterScope: true
+                  template: build-image
+                arguments:
+                  parameters:
+                    - name: git-revision
+                      value: '{{steps.checkout-source.outputs.parameters.git-revision}}'
+                    - name: build-env
+                      value: '{{workflow.parameters.build-env}}'
+                    - name: build-args
+                      value: '{{workflow.parameters.build-args}}'
+            - - name: publish-image
+                templateRef:
+                  name: publish-image
+                  clusterScope: true
+                  template: publish-image
+                arguments:
+                  parameters:
+                    - name: git-revision
+                      value: '{{steps.checkout-source.outputs.parameters.git-revision}}'
+            - - name: generate-workload-cr
+                templateRef:
+                  name: generate-workload
+                  clusterScope: true
+                  template: generate-workload-cr
+                arguments:
+                  parameters:
+                    - name: image
+                      value: '{{steps.publish-image.outputs.parameters.image}}'
+                    - name: run-name
+                      value: '{{workflow.parameters.workflowrun-name}}'
+[[- if .Cloud ]]
+                    - name: environment-variables
+                      value: '{{workflow.parameters.environment-variables}}'
+[[- else ]]
+                    - name: source-commit
+                      value: '{{steps.checkout-source.outputs.parameters.commit-sha}}'
+                    - name: source-branch
+                      value: '{{steps.checkout-source.outputs.parameters.source-branch}}'
+                    - name: source-repository
+                      value: '{{workflow.parameters.git-repo}}'
+                    - name: source-authored-at
+                      value: '{{steps.checkout-source.outputs.parameters.commit-authored-at}}'
+[[- end ]]
+        - name: generate-spa-files
+          script:
+            image: alpine:3.20
+            command: [sh]
+            env:
+              - name: APP_PATH
+                value: '{{workflow.parameters.app-path}}'
+              - name: NODE_VERSION
+                value: '{{workflow.parameters.node-version}}'
+              - name: BUILD_COMMAND
+                value: '{{workflow.parameters.build-command}}'
+              - name: OUTPUT_DIR
+                value: '{{workflow.parameters.output-dir}}'
+            volumeMounts:
+              - name: workspace
+                mountPath: /mnt/vol
+            source: |
+              set -eu
+              SRC=/mnt/vol/source
+              APP_DIR="$SRC/$APP_PATH"
+              if [ ! -d "$APP_DIR" ]; then
+                echo ">> Error: app path '$APP_PATH' does not exist in the repository"
+                ls -la "$SRC"
+                exit 1
+              fi
+              GEN="$APP_DIR/.web-app-hosting"
+              mkdir -p "$GEN"
+
+              # Output dir relative to appPath, without a leading ./ or / and trailing /.
+              OUT=$(printf '%s' "$OUTPUT_DIR" | sed -e 's#^\./##' -e 's#^/*##' -e 's#/*$##')
+              [ -n "$OUT" ] || OUT=.
+              # Build command on one line; blank = static site.
+              CMD=$(printf '%s' "$BUILD_COMMAND" | tr '\r\n' '  ' | sed -e 's/^ *//' -e 's/ *$//')
+              NODE=$(printf '%s' "$NODE_VERSION" | sed -e 's/^v//' -e 's/\.x$//')
+              [ -n "$NODE" ] || NODE=20
+
+              cat > "$GEN/default.conf" <<'NGINX'
+              server {
+                listen 8080;
+                server_name _;
+                root /usr/share/nginx/html;
+                index index.html;
+                # Runtime config, mounted per environment: never cache.
+                location = /config.js {
+                  add_header Cache-Control "no-store";
+                  try_files /config.js =404;
+                }
+                # Fingerprinted build assets (name-<hash>.ext / name.<hash>.ext): cache forever.
+                location ~* "[.-][A-Za-z0-9_-]{8,}\.(?:js|mjs|css|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|eot|map)$" {
+                  add_header Cache-Control "public, max-age=31536000, immutable";
+                  try_files $uri =404;
+                }
+                # Other static files: revalidate; a missing asset is a 404, not the app shell.
+                location ~* "\.(?:js|mjs|css|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|eot|map|json|txt|xml)$" {
+                  add_header Cache-Control "no-cache";
+                  try_files $uri =404;
+                }
+                # SPA fallback: unknown routes serve the app shell.
+                location / {
+                  add_header Cache-Control "no-cache";
+                  try_files $uri $uri/ /index.html;
+                }
+              }
+              NGINX
+
+              if [ -z "$CMD" ]; then
+                echo ">> Static site: serving '$OUT' as is"
+                {
+                  echo "FROM alpine:3.20 AS site"
+                  echo "COPY $OUT /site"
+                } > "$GEN/Dockerfile"
+              else
+                echo ">> SPA build: node:$NODE-slim, '$CMD', output '$OUT'"
+                {
+                  echo "FROM node:$NODE-slim AS build"
+                  echo "WORKDIR /app"
+                  echo "COPY . ."
+                  echo 'RUN if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then npm ci; elif [ -f yarn.lock ]; then corepack enable && yarn install --frozen-lockfile; elif [ -f pnpm-lock.yaml ]; then corepack enable && pnpm install --frozen-lockfile; else npm install; fi'
+                  echo "RUN $CMD"
+                  echo "FROM alpine:3.20 AS site"
+                  echo "COPY --from=build /app/$OUT /site"
+                } > "$GEN/Dockerfile"
+              fi
+              {
+                echo "RUN rm -rf /site/.git /site/.web-app-hosting /site/workload.yaml && chmod -R a+rX /site"
+                echo "FROM nginxinc/nginx-unprivileged:stable-alpine"
+                echo "COPY .web-app-hosting/default.conf /etc/nginx/conf.d/default.conf"
+                echo "COPY --from=site /site /usr/share/nginx/html"
+                echo "EXPOSE 8080"
+              } >> "$GEN/Dockerfile"
+
+              # Workload descriptor: the nginx runtime always serves HTTP on 8080.
+              cat > "$APP_DIR/workload.yaml" <<'WORKLOAD'
+              apiVersion: openchoreo.dev/v1alpha1
+              metadata:
+                name: web-app
+              endpoints:
+                - name: http
+                  port: 8080
+                  type: HTTP
+                  visibility:
+                    - external
+              WORKLOAD
+
+              echo ">> Generated Dockerfile:"
+              cat "$GEN/Dockerfile"
+              echo ">> Generated workload.yaml:"
+              cat "$APP_DIR/workload.yaml"
+      volumeClaimTemplates:
+        - metadata:
+            name: workspace
+          spec:
+[[- if .Cloud ]]
+            storageClassName: ci
+[[- end ]]
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 2Gi
+  externalRefs:
+    - id: git-secret-reference
+      apiVersion: openchoreo.dev/v1alpha1
+      kind: SecretReference
+      name: ${parameters.repository.secretRef}
+  resources:
+    - id: git-secret
+      includeWhen: ${has(parameters.repository.secretRef) && parameters.repository.secretRef != ""}
+      template:
+        apiVersion: external-secrets.io/v1
+        kind: ExternalSecret
+        metadata:
+          name: ${metadata.workflowRunName}-git-secret
+          namespace: ${metadata.namespace}
+        spec:
+          refreshInterval: 15s
+          secretStoreRef:
+            kind: ClusterSecretStore
+            name: ${workflowplane.secretStore}
+          target:
+            name: ${metadata.workflowRunName}-git-secret
+            creationPolicy: Owner
+            template:
+              type: ${externalRefs['git-secret-reference'].spec.template.type}
+          data: |
+            ${externalRefs['git-secret-reference'].spec.data.map(secret, {
+              "secretKey": secret.secretKey,
+              "remoteRef": {
+                "key": secret.remoteRef.key,
+                "property": has(secret.remoteRef.property) && secret.remoteRef.property != "" ? secret.remoteRef.property : oc_omit()
+              }
+            })}
+[[- if .Cloud ]]
+    - id: registry-push-secret
+      template:
+        apiVersion: external-secrets.io/v1
+        kind: ExternalSecret
+        metadata:
+          name: ${metadata.workflowRunName}-registry-push-secret
+          namespace: ${metadata.namespace}
+        spec:
+          refreshInterval: "0"
+          secretStoreRef:
+            name: secretstore-read
+            kind: ClusterSecretStore
+          target:
+            name: ${metadata.workflowRunName}-registry-push-secret
+            creationPolicy: Owner
+            template:
+              type: kubernetes.io/dockerconfigjson
+          data:
+            - secretKey: .dockerconfigjson
+              remoteRef:
+                key: automation/registry-access-credentials-userapps
+                property: .dockerconfigjson
+    - id: ecr-creds
+      template:
+        apiVersion: external-secrets.io/v1
+        kind: ExternalSecret
+        metadata:
+          name: ${metadata.workflowRunName}-ecr-creds
+          namespace: ${metadata.namespace}
+        spec:
+          refreshInterval: "0"
+          secretStoreRef:
+            name: secretstore-read
+            kind: ClusterSecretStore
+          target:
+            name: ${metadata.workflowRunName}-ecr-creds
+            creationPolicy: Owner
+          data:
+            - secretKey: AWS_ACCESS_KEY_ID
+              remoteRef:
+                key: application
+                property: cicd.container-registry-userapps.ecr.access-key-id
+            - secretKey: AWS_SECRET_ACCESS_KEY
+              remoteRef:
+                key: application
+                property: cicd.container-registry-userapps.ecr.secret-access-key
+[[- else ]]
+    - id: registry-push-secret
+      template:
+        apiVersion: external-secrets.io/v1
+        kind: ExternalSecret
+        metadata:
+          name: ${metadata.workflowRunName}-registry-push-secret
+          namespace: ${metadata.namespace}
+        spec:
+          refreshInterval: 15s
+          secretStoreRef:
+            kind: ClusterSecretStore
+            name: ${workflowplane.secretStore}
+          target:
+            name: ${metadata.workflowRunName}-registry-push-secret
+            creationPolicy: Owner
+            template:
+              type: kubernetes.io/dockerconfigjson
+              data:
+                .dockerconfigjson: '{{ .registrysecret | toString }}'
+          data:
+            - secretKey: registrysecret
+              remoteRef:
+                key: registry-push-secret
+                property: value
+[[- end ]]
