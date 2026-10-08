@@ -27,7 +27,7 @@ export default function TrackSelect({ track }: { track: TrackRef }): JSX.Element
       inputProps={{ 'aria-label': 'Deployment track' }}>
       {tracks.map((t) => (
         <MenuItem key={t.id} value={t.id}>
-          {t.branch}
+          {t.branch || 'image'}
           {t.isDefault ? ' (default)' : ''}
         </MenuItem>
       ))}

@@ -56,7 +56,7 @@ function BuildContent({ track }: { track: TrackRef }): JSX.Element {
 
 export default function WebAppBuild(): JSX.Element {
   return (
-    <WebAppPage title="Build" description="Build your web app from source and review build history.">
+    <WebAppPage title="Build" description="Build your web app from source and review build history, or deploy another tag of its container image.">
       {({ webApp, track, environments }) =>
         webApp.sourceType === 'docker' ? <ImageSourcePanel track={track} targetEnvName={environments[0]?.name ?? 'the first environment'} /> : <BuildContent track={track} />
       }
