@@ -47,8 +47,8 @@ type Service struct {
 	// traitPasses records the background HPA-trait attach pass started per
 	// namespace and platformres.Version ("ns@version" -> struct{}).
 	traitPasses sync.Map
-	watches sync.Map // run name -> struct{}
-	envs    *ttlCache[[]Environment]
+	watches     sync.Map // run name -> struct{}
+	envs        *ttlCache[[]Environment]
 	// trackLocks serializes deploys per track (namespace/component -> chan
 	// struct{} of capacity 1); see lockTrack.
 	trackLocks sync.Map

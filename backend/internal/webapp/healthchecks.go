@@ -94,7 +94,7 @@ func (s *Service) UpdateHealthCheck(ctx context.Context, webAppID, trackID, env 
 			return nil, err
 		}
 	}
-	saved, err := s.applyP1Binding(ctx, *t, env, func(spec *gen.ReleaseBindingSpec) { writeHealthCheck(spec, in) })
+	saved, err := s.applyBindingSettings(ctx, *t, env, true, func(spec *gen.ReleaseBindingSpec, _ bool) { writeHealthCheck(spec, in) })
 	if err != nil {
 		return nil, err
 	}

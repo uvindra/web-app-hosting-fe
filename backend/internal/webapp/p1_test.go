@@ -597,3 +597,65 @@ func TestEnsureAttachesTraitsInBackground(t *testing.T) {
 		t.Fatalf("component updates = %d, want 2 (one pass)", updates)
 	}
 }
+
+// TestFixedReplicasOnPreV3Release: fixed replicas and container resources go
+// through the same re-cut-aware writer as HPA/health checks — the release is
+// upgraded (and the disabled HPA settings kept). When the re-cut fails, the
+// replicas still land on the old release, without a trait config (the release
+// has no HPA trait instance; OpenChoreo would silently ignore it), while
+// strict settings fail.
+func TestFixedReplicasOnPreV3Release(t *testing.T) {
+	e := newTestEnv(t)
+	e.addTrack("site", "site", "main", true)
+	e.deployOldRelease("run-a", "img-a")
+	fixed := ScalingConfig{Method: ScaleNone, FixedReplicas: 2, HPA: HPASettings{MinReplicas: 1, MaxReplicas: 3, CPUUtilization: intp(60)}}
+	if _, err := e.svc.UpdateScaling(e.ctx, "site", "site", "development", fixed); err != nil {
+		t.Fatal(err)
+	}
+	spec := bindingSpec(e)
+	if spec["releaseName"] != "run-a--r3" || spec["componentTypeEnvironmentConfigs"].(map[string]any)["replicas"] != 2.0 {
+		t.Fatalf("binding = %v", spec)
+	}
+	if hp, _ := spec["traitEnvironmentConfigs"].(map[string]any)["hpa"].(map[string]any); hp["enabled"] != false || hp["cpuUtilization"] != 60.0 {
+		t.Fatalf("trait config = %v", spec["traitEnvironmentConfigs"])
+	}
+
+	// Container resources on a pre-v3 release re-cut it too.
+	e2 := newTestEnv(t)
+	e2.addTrack("site", "site", "main", true)
+	e2.deployOldRelease("run-a", "img-a")
+	if _, err := e2.svc.UpdateContainer(e2.ctx, "site", "site", "development", "main", ContainerUpdate{ImagePullPolicy: "Always", CPURequest: 50, CPULimit: 100, MemoryRequest: 256, MemoryLimit: 512}); err != nil {
+		t.Fatal(err)
+	}
+	if spec := bindingSpec(e2); spec["releaseName"] != "run-a--r3" || spec["traitEnvironmentConfigs"] != nil {
+		t.Fatalf("container update binding = %v", spec)
+	}
+
+	// The re-cut fails (a concurrent workload change spoils the snapshot).
+	e3 := newTestEnv(t)
+	e3.addTrack("site", "site", "main", true)
+	e3.deployOldRelease("run-a", "img-a")
+	e3.oc.beforeGenerate = func(string, string) {
+		e3.oc.Put("workloads", map[string]any{"metadata": map[string]any{"name": "site-workload"}, "spec": map[string]any{
+			"owner": map[string]any{"componentName": "site", "projectName": "default"}, "container": map[string]any{"image": "img-other"},
+		}})
+	}
+	if _, err := e3.svc.UpdateScaling(e3.ctx, "site", "site", "development", fixed); err != nil {
+		t.Fatalf("fixed replicas must not need the re-cut: %v", err)
+	}
+	spec = bindingSpec(e3)
+	if spec["releaseName"] != "run-a" || spec["componentTypeEnvironmentConfigs"].(map[string]any)["replicas"] != 2.0 || spec["traitEnvironmentConfigs"] != nil {
+		t.Fatalf("binding after failed re-cut = %v", spec)
+	}
+	if _, err := e3.svc.UpdateHealthCheck(e3.ctx, "site", "site", "development", HealthCheck{LivenessProbe: httpProbe("/", 8080)}); err == nil {
+		t.Fatal("health checks need the current release")
+	}
+	hpa := fixed
+	hpa.Method = ScaleHPA
+	if _, err := e3.svc.UpdateScaling(e3.ctx, "site", "site", "development", hpa); err == nil {
+		t.Fatal("autoscaling needs the current release")
+	}
+	if spec := bindingSpec(e3); spec["traitEnvironmentConfigs"] != nil || spec["releaseName"] != "run-a" {
+		t.Fatalf("binding after failed strict writes = %v", spec)
+	}
+}

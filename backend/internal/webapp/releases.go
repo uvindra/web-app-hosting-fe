@@ -20,7 +20,7 @@ import (
 // A ComponentRelease freezes the ComponentType spec, the traits and the
 // component profile at the time it is cut, so a binding whose release
 // predates CT v3 ignores the v3 environment configs (probes) and the HPA
-// trait's config. The first P1 write to such a binding re-cuts its release —
+// trait's config. The first settings write to such a binding re-cuts its release —
 // the same frozen workload, the current ComponentType and traits — under
 // `<release>--r<version>`; refreshedSuffix maps it back to its build.
 var refreshedSuffix = regexp.MustCompile(`--r[0-9]+$`)
@@ -136,13 +136,25 @@ func (s *Service) attachTraitsToTracks(ctx context.Context) {
 	_ = g.Wait()
 }
 
-// applyP1Binding writes a P1 setting (health checks, autoscaling) to the
-// track's binding in env. Under the track's deploy lock it first makes sure
-// the bound release supports P1 settings — re-cutting it when it predates CT
-// v3 — and binds that release in the same write.
-func (s *Service) applyP1Binding(ctx context.Context, t track, env string, mutate func(*gen.ReleaseBindingSpec)) (*gen.ReleaseBinding, error) {
-	if err := s.EnsurePlatformResources(ctx); err != nil {
-		return nil, err
+// applyBindingSettings is the single writer of an environment's settings
+// (container resources, replicas, autoscaling, health checks) on the track's
+// binding. Under the track's deploy lock it makes sure the bound release was
+// cut with the current ComponentType and traits — re-cutting it (same frozen
+// workload) when it predates CT v3 — and binds that release in the same
+// write.
+//
+// strict settings (health checks, autoscaling) only work on a current
+// release, so a failed re-cut fails the write. Other settings (resources,
+// fixed replicas — CT v2 has them too) are then written onto the old release.
+//
+// mutate is told whether the bound release is current, i.e. carries the HPA
+// trait. OpenChoreo (verified on 1.3.0) accepts traitEnvironmentConfigs for a
+// trait instance the release lacks and silently ignores them, so mutate must
+// not write trait configs when current is false.
+func (s *Service) applyBindingSettings(ctx context.Context, t track, env string, strict bool, mutate func(spec *gen.ReleaseBindingSpec, current bool)) (*gen.ReleaseBinding, error) {
+	ensureErr := s.EnsurePlatformResources(ctx)
+	if ensureErr != nil && strict {
+		return nil, ensureErr
 	}
 	unlock, err := s.lockTrack(ctx, t.Name)
 	if err != nil {
@@ -156,13 +168,25 @@ func (s *Service) applyP1Binding(ctx context.Context, t track, env string, mutat
 	if cur == nil || releaseOf(*cur) == "" {
 		return nil, errf(CodeNotFound, "not deployed to %s", env)
 	}
-	rel, err := s.currentReleaseLocked(ctx, t, releaseOf(*cur))
-	if err != nil {
-		return nil, err
+	rel, current := releaseOf(*cur), false
+	if ensureErr == nil {
+		up, err := s.currentReleaseLocked(ctx, t, rel)
+		switch {
+		case err == nil:
+			rel, current = up, true
+		case strict:
+			return nil, err
+		default:
+			slog.WarnContext(ctx, "could not upgrade the release; writing the settings onto it as is", "track", t.Name, "release", rel, "error", err)
+		}
+	} else {
+		slog.WarnContext(ctx, "platform resources not ensured; writing the settings onto the bound release as is", "track", t.Name, "error", ensureErr)
+		r, err := s.oc.GetComponentRelease(ctx, ns(ctx), rel)
+		current = err == nil && releaseIsCurrent(r)
 	}
 	return s.oc.ApplyReleaseBinding(ctx, ns(ctx), t.Project, t.Name, env, func(spec *gen.ReleaseBindingSpec) {
 		spec.ReleaseName = &rel
-		mutate(spec)
+		mutate(spec, current)
 	})
 }
 

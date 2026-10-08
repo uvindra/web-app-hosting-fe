@@ -154,7 +154,7 @@ func (s *Service) UpdateContainer(ctx context.Context, webAppID, trackID, env, c
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.oc.ApplyReleaseBinding(ctx, ns(ctx), t.Project, t.Name, env, func(spec *gen.ReleaseBindingSpec) {
+	if _, err := s.applyBindingSettings(ctx, *t, env, false, func(spec *gen.ReleaseBindingSpec, _ bool) {
 		c := readEnvConfigs(spec)
 		c.PullPolicy = u.ImagePullPolicy
 		c.CPURequest, c.CPULimit = FormatCPU(u.CPURequest), FormatCPU(u.CPULimit)
@@ -310,23 +310,22 @@ func (s *Service) UpdateScaling(ctx context.Context, webAppID, trackID, env stri
 	if err := ValidateScaling(in, l); err != nil {
 		return nil, err
 	}
-	mutate := func(spec *gen.ReleaseBindingSpec) {
+	// Autoscaling needs the HPA trait in the bound release (strict); so does
+	// turning it off. Fixed replicas alone work on any release, and the
+	// (disabled) HPA settings are only kept where the release has the trait.
+	enabled, _ := hpaConfig(b.Spec)
+	saved, err := s.applyBindingSettings(ctx, *t, env, in.Method == ScaleHPA || enabled, func(spec *gen.ReleaseBindingSpec, current bool) {
 		if in.Method == ScaleHPA {
 			setHPAConfig(spec, true, in.HPA)
 			return
 		}
-		setHPAConfig(spec, false, in.HPA)
+		if current {
+			setHPAConfig(spec, false, in.HPA)
+		}
 		c := readEnvConfigs(spec)
 		c.Replicas = in.FixedReplicas
 		writeEnvConfigs(spec, c)
-	}
-	var saved *gen.ReleaseBinding
-	if enabled, _ := hpaConfig(b.Spec); in.Method == ScaleHPA || enabled {
-		// The HPA trait must be in the bound release (re-cut if needed).
-		saved, err = s.applyP1Binding(ctx, *t, env, mutate)
-	} else {
-		saved, err = s.oc.ApplyReleaseBinding(ctx, ns(ctx), t.Project, t.Name, env, mutate)
-	}
+	})
 	if err != nil {
 		return nil, err
 	}
