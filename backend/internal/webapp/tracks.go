@@ -371,8 +371,9 @@ func (s *Service) CheckTrackDeletable(ctx context.Context, webAppID, trackID str
 	return &TrackDeletableResult{CanDelete: true}, nil
 }
 
-// DeleteTrack deletes an undeployed, non-default track: its bindings, then
-// its Component.
+// DeleteTrack deletes an undeployed, non-default track: its bindings, the
+// secret-store entries its secret configs own, then its Component. (The
+// default track is never deleted, and there is no web-app delete in P0.)
 func (s *Service) DeleteTrack(ctx context.Context, webAppID, trackID string) error {
 	res, err := s.CheckTrackDeletable(ctx, webAppID, trackID)
 	if err != nil {
@@ -386,12 +387,43 @@ func (s *Service) DeleteTrack(ctx context.Context, webAppID, trackID string) err
 	if err != nil {
 		return err
 	}
+	var secretRefs []string
+	for _, b := range bindings {
+		for _, m := range readMeta(b) {
+			if m.Kind == KindSecret && m.SecretRef != "" {
+				secretRefs = append(secretRefs, m.SecretRef)
+			}
+		}
+	}
 	for _, b := range bindings {
 		if err := s.oc.DeleteReleaseBinding(ctx, n, b.Metadata.Name); err != nil {
 			return err
 		}
 	}
+	s.deleteSecrets(ctx, trackID, secretRefs)
 	return s.oc.DeleteComponent(ctx, n, trackID)
+}
+
+// secretDeleteTimeout bounds each secret-store delete during track deletion.
+const secretDeleteTimeout = 10 * time.Second
+
+// deleteSecrets removes secret-store entries best-effort: a failing or slow
+// store does not block deleting the track; leftovers are logged (with their
+// refs) for cleanup.
+func (s *Service) deleteSecrets(ctx context.Context, trackID string, refs []string) {
+	var leaked []string
+	for _, ref := range refs {
+		dctx, cancel := context.WithTimeout(ctx, secretDeleteTimeout)
+		err := s.p.Secrets.Delete(dctx, ref)
+		cancel()
+		if err != nil {
+			slog.ErrorContext(ctx, "could not delete a deleted track's secret", "track", trackID, "secretRef", ref, "error", err)
+			leaked = append(leaked, ref)
+		}
+	}
+	if len(leaked) > 0 {
+		slog.ErrorContext(ctx, "track deleted with orphaned secret-store entries", "track", trackID, "secretRefs", leaked)
+	}
 }
 
 // SetAutoDeploy toggles a track's auto-deploy (deploy to the first
