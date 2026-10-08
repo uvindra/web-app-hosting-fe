@@ -183,14 +183,16 @@ func DesiredReplicas(tree *gen.K8sResourceTreeResponse) int {
 }
 
 // BuildMetrics maps Observer series to the console's chart rows. CPU and
-// memory request/limit come from alloc, not the Observer (see Allocation).
+// memory rows are the usage samples, each carrying request/limit from alloc
+// (the Observer's request/limit series are not used — see Allocation — so
+// their timestamps must not add rows without usage).
 func BuildMetrics(res, http map[string][]platform.MetricSample, alloc Allocation) *WebAppMetrics {
 	ident := func(v float64) float64 { return v }
 	toMB := func(v float64) float64 { return v / mib }
 	toMs := func(v float64) float64 { return v * 1000 }
 	out := &WebAppMetrics{
-		CPURows:     rows(res, map[string]string{"usage": "cpuUsage", "request": "cpuRequests", "limit": "cpuLimits"}, ident, 4),
-		MemoryRows:  rows(res, map[string]string{"usage": "memoryUsage", "request": "memoryRequests", "limit": "memoryLimits"}, toMB, 2),
+		CPURows:     rows(res, map[string]string{"usage": "cpuUsage"}, ident, 4),
+		MemoryRows:  rows(res, map[string]string{"usage": "memoryUsage"}, toMB, 2),
 		RequestRows: rows(http, map[string]string{"total": "requestCount", "success": "successfulRequestCount"}, ident, 3),
 		LatencyRows: rows(http, map[string]string{"p50": "latencyP50", "p90": "latencyP90", "p99": "latencyP99"}, toMs, 1),
 		ErrorRows:   []MetricsRow{},

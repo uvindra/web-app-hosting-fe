@@ -366,6 +366,15 @@ func TestBuildMetrics(t *testing.T) {
 	if m.MemoryRows[0]["usage"] != 4.0 || m.MemoryRows[0]["limit"] != 2048.0 {
 		t.Fatalf("memory rows = %v", m.MemoryRows)
 	}
+	// Request/limit samples where usage has none add no (usage-less) rows.
+	gappy := map[string][]platform.MetricSample{
+		"cpuUsage": s(0.01), "cpuRequests": s(0.2, 0.2, 0.2), "cpuLimits": s(0.2, 0.2, 0.2),
+		"memoryUsage": s(4 * mib), "memoryRequests": s(700*mib, 700*mib), "memoryLimits": s(2048*mib, 2048*mib),
+	}
+	g := BuildMetrics(gappy, nil, alloc)
+	if len(g.CPURows) != 1 || len(g.MemoryRows) != 1 || g.CPURows[0]["usage"] != 0.01 || g.CPURows[0]["limit"] != 0.2 || g.MemoryRows[0]["request"] != 700.0 {
+		t.Fatalf("rows without usage: cpu %v memory %v", g.CPURows, g.MemoryRows)
+	}
 	http := map[string][]platform.MetricSample{
 		"requestCount": s(10, 0), "successfulRequestCount": s(9, 0), "unsuccessfulRequestCount": s(1, 0),
 		"latencyP50": s(0.012, 0), "latencyP90": s(0.05, 0), "latencyP99": s(0.1234, 0),
