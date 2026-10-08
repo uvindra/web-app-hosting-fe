@@ -534,3 +534,33 @@ func TestIntOr(t *testing.T) {
 		t.Fatalf("probe = %+v", p)
 	}
 }
+
+// TestImageDeploymentsReadEachReleaseOnce: environments bound to the same
+// release share one release read.
+func TestImageDeploymentsReadEachReleaseOnce(t *testing.T) {
+	e := newTestEnv(t)
+	if _, err := e.svc.CreateWebApp(e.ctx, "default", CreateWebAppInput{
+		SourceType: SourceDocker, DisplayName: "Nginx", Handler: "nginx", Image: "nginxinc/nginx-unprivileged", Tag: "stable-alpine", Port: 8080,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.Promote(e.ctx, "nginx", "nginx", PromoteInput{SourceEnvironment: "development", TargetEnvironment: "production"}); err != nil {
+		t.Fatal(err)
+	}
+	e.oc.mu.Lock()
+	e.oc.gets = nil
+	e.oc.mu.Unlock()
+	deps, err := e.svc.Deployments(e.ctx, "nginx", "nginx")
+	if err != nil || len(deps) != 2 || deps[0].Image != "nginxinc/nginx-unprivileged:stable-alpine" || deps[1].Image != deps[0].Image {
+		t.Fatalf("deployments = %+v, %v", deps, err)
+	}
+	reads := 0
+	for _, g := range e.oc.gets {
+		if strings.HasPrefix(g, "componentreleases/") {
+			reads++
+		}
+	}
+	if reads != 1 {
+		t.Fatalf("release reads = %d (%v), want 1", reads, e.oc.gets)
+	}
+}

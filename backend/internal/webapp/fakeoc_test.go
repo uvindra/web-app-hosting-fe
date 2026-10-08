@@ -29,6 +29,7 @@ type fakeOC struct {
 	// beforeGenerate runs (unlocked) before a release snapshot is taken.
 	beforeGenerate func(component, release string)
 	deletes        []string // "collection/name"
+	gets           []string // single-object reads, "collection/name"
 	// stepLogs answers workflowruns/{name}/logs?task= (after logDelay);
 	// maxInFlight records the peak concurrency of those reads.
 	stepLogs              map[string][]string
@@ -174,6 +175,7 @@ func (f *fakeOC) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.put(coll, body)
 		writeJSON(w, 201, f.objs[coll][nameOf(body)])
 	case len(parts) == 2 && r.Method == http.MethodGet:
+		f.gets = append(f.gets, coll+"/"+parts[1])
 		o, ok := f.objs[coll][parts[1]]
 		if !ok {
 			writeJSON(w, 404, map[string]any{"error": "not found"})

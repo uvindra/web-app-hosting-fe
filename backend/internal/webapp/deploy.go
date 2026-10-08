@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -165,6 +166,10 @@ func (s *Service) Deployments(ctx context.Context, webAppID, trackID string) ([]
 	for _, r := range list {
 		runs[r.Metadata.Name] = r
 	}
+	var images map[string]string
+	if t.isImage() {
+		images = s.releaseImages(ctx, bindings)
+	}
 	var out []Deployment
 	for _, e := range envs {
 		b, ok := bindings[e.ID]
@@ -172,17 +177,46 @@ func (s *Service) Deployments(ctx context.Context, webAppID, trackID string) ([]
 			continue
 		}
 		d := s.toDeployment(b, runs[buildOfRelease(releaseOf(b))])
-		if t.isImage() {
-			if r, err := s.oc.GetComponentRelease(ctx, ns(ctx), releaseOf(b)); err == nil {
-				d.Image = releaseImage(r)
-			}
-		}
+		d.Image = images[releaseOf(b)]
 		out = append(out, d)
 	}
 	if out == nil {
 		out = []Deployment{}
 	}
 	return out, nil
+}
+
+// releaseLookupConcurrency bounds concurrent ComponentRelease reads.
+const releaseLookupConcurrency = 4
+
+// releaseImages reads the image of each distinct release bound in bindings,
+// concurrently (release name -> image; unreadable releases are absent).
+func (s *Service) releaseImages(ctx context.Context, bindings map[string]gen.ReleaseBinding) map[string]string {
+	names := map[string]bool{}
+	for _, b := range bindings {
+		if r := releaseOf(b); r != "" {
+			names[r] = true
+		}
+	}
+	out := make(map[string]string, len(names))
+	var mu sync.Mutex
+	var g errgroup.Group
+	g.SetLimit(releaseLookupConcurrency)
+	for name := range names {
+		g.Go(func() error {
+			r, err := s.oc.GetComponentRelease(ctx, ns(ctx), name)
+			if err != nil {
+				slog.DebugContext(ctx, "release lookup failed", "release", name, "error", err)
+				return nil
+			}
+			mu.Lock()
+			out[name] = releaseImage(r)
+			mu.Unlock()
+			return nil
+		})
+	}
+	_ = g.Wait()
+	return out
 }
 
 func (s *Service) toDeployment(b gen.ReleaseBinding, run gen.WorkflowRun) Deployment {
