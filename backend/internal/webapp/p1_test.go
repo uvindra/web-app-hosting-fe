@@ -212,7 +212,7 @@ func TestScalingHPAAndBack(t *testing.T) {
 		t.Fatalf("release = %v", spec["releaseName"])
 	}
 
-	got, err = e.svc.UpdateScaling(e.ctx, "site", "site", "development", ScalingConfig{Method: ScaleNone, FixedReplicas: 2})
+	got, err = e.svc.UpdateScaling(e.ctx, "site", "site", "development", ScalingConfig{Method: ScaleNone, FixedReplicas: 2, HPA: hpa.HPA})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestScalingHPAAndBack(t *testing.T) {
 		t.Fatalf("scaling = %+v", got)
 	}
 	spec = bindingSpec(e)
-	if spec["traitEnvironmentConfigs"].(map[string]any)["hpa"].(map[string]any)["enabled"] != false || spec["componentTypeEnvironmentConfigs"].(map[string]any)["replicas"] != 2.0 {
+	if hp := spec["traitEnvironmentConfigs"].(map[string]any)["hpa"].(map[string]any); hp["enabled"] != false || hp["cpuUtilization"] != 60.0 || spec["componentTypeEnvironmentConfigs"].(map[string]any)["replicas"] != 2.0 {
 		t.Fatalf("binding = %v", spec)
 	}
 }

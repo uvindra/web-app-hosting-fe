@@ -225,14 +225,15 @@ func setHPAConfig(spec *gen.ReleaseBindingSpec, enabled bool, h HPASettings) {
 	if spec.TraitEnvironmentConfigs != nil {
 		m = *spec.TraitEnvironmentConfigs
 	}
+	// The settings are kept while disabled, so the console shows them again.
+	// Values a disabled trait would reject are dropped instead.
 	cfg := map[string]any{"enabled": enabled}
-	if enabled {
+	if h.MinReplicas >= minReplicas && h.MaxReplicas <= maxReplicas && h.MinReplicas <= h.MaxReplicas {
 		cfg["minReplicas"], cfg["maxReplicas"] = h.MinReplicas, h.MaxReplicas
-		if h.CPUUtilization != nil {
-			cfg["cpuUtilization"] = *h.CPUUtilization
-		}
-		if h.MemoryUtilization != nil {
-			cfg["memoryUtilization"] = *h.MemoryUtilization
+	}
+	for key, v := range map[string]*int{"cpuUtilization": h.CPUUtilization, "memoryUtilization": h.MemoryUtilization} {
+		if v != nil && *v >= 1 && *v <= 100 {
+			cfg[key] = *v
 		}
 	}
 	m[platformres.HPATraitInstance] = cfg
