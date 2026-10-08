@@ -4,8 +4,26 @@ import type { Deployment } from '../../types/deployment';
 import { formatRelativeTime } from '../../utils/formatRelativeTime';
 import WebAppUrlRow from './WebAppUrlRow';
 
-/** Deployed build/commit + URL for an environment's current deployment. Shared by the Deploy and Overview env cards. */
+/** Deployed build/commit (or image) + URL for an environment's current deployment. Shared by the Deploy and Overview env cards. */
 export default function DeploymentSummary({ deployment }: { deployment: Deployment }): JSX.Element {
+  if (deployment.image) {
+    return (
+      <Stack gap={1}>
+        <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
+          <Typography variant="body2" color="text.secondary">
+            Deployed image:
+          </Typography>
+          <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+            {deployment.image}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {formatRelativeTime(deployment.deployedAt)}
+          </Typography>
+        </Stack>
+        {deployment.status !== 'stopped' && <WebAppUrlRow url={deployment.url} />}
+      </Stack>
+    );
+  }
   return (
     <Stack gap={1}>
       <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">

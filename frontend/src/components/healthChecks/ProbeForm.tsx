@@ -12,6 +12,8 @@ interface ProbeFormProps {
   isSaving: boolean;
   onSubmit: (probe: Probe) => void;
   onClose: () => void;
+  /** The web app's port (prefilled for HTTP/TCP probes; the BFF only accepts it). */
+  defaultPort?: number;
 }
 
 const TYPE_DESCRIPTION: Record<ProbeType, string> = {
@@ -22,9 +24,9 @@ const TYPE_DESCRIPTION: Record<ProbeType, string> = {
 
 const reqSx = { '& .MuiFormLabel-asterisk': { color: 'error.main' } } as const;
 
-export default function ProbeForm({ kind, existing, isSaving, onSubmit, onClose }: ProbeFormProps): JSX.Element {
+export default function ProbeForm({ kind, existing, isSaving, onSubmit, onClose, defaultPort }: ProbeFormProps): JSX.Element {
   const isLiveness = kind === PROBE_KIND.LIVENESS;
-  const [form, setForm] = useState<ProbeFormState>(() => (existing ? probeToForm(existing) : defaultProbeForm()));
+  const [form, setForm] = useState<ProbeFormState>(() => (existing ? probeToForm(existing) : defaultProbeForm(defaultPort)));
   // Errors only surface once a field has been touched.
   const [touched, setTouched] = useState<Record<string, boolean>>({});
 

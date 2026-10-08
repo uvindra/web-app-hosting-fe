@@ -12,6 +12,8 @@ export interface Deployment {
   status: DeploymentStatus;
   deployedAt: string;
   url: string;
+  /** Image-sourced web apps: the deployed image reference (no build or commit). */
+  image?: string;
 }
 
 export interface DeployBuildInput {

@@ -2,7 +2,9 @@ import { useState, type JSX } from 'react';
 import { Alert, Box, Button, CircularProgress, FormControlLabel, Radio, RadioGroup, Slider, Stack, TextField, Typography } from '@wso2/oxygen-ui';
 import { ArrowLeft } from '@wso2/oxygen-ui-icons-react';
 import { useUpdateContainer } from '../../hooks/useContainers';
-import { CPU_MAX, CPU_MIN, CPU_STEP, MEMORY_MAX, MEMORY_MIN, MEMORY_STEP, containerToForm, formToUpdate, isFormDirty, splitLines, validateForm } from './containerForm';
+import PlanUpgradeHint from '../PlanUpgradeHint';
+import { usePlanLimits } from '../../hooks/usePlan';
+import { CPU_MAX, CPU_MIN, CPU_STEP, DEFAULT_RESOURCES, MEMORY_MAX, MEMORY_MIN, MEMORY_STEP, containerToForm, formToUpdate, isFormDirty, splitLines, validateForm } from './containerForm';
 import type { ImagePullPolicy, WebAppContainer } from '../../types/containers';
 import type { EnvironmentId } from '../../types/webApp';
 import type { TrackRef } from '../../types/track';
@@ -58,7 +60,11 @@ function RangeSlider({ label, unit, min, max, step, request, limit, onChange }: 
 export default function ContainerEditForm({ container, track, environment, onClose, onSaved, onError }: ContainerEditFormProps): JSX.Element {
   const [form, setForm] = useState(() => containerToForm(container));
   const update = useUpdateContainer(track, environment);
-  const errors = validateForm(form);
+  const customResources = usePlanLimits()?.customResources;
+  const errors = validateForm(form, customResources);
+  // Free plans: the sliders stop at the defaults (or at today's values, if already above them).
+  const cpuMax = customResources === false ? Math.max(DEFAULT_RESOURCES.cpuLimit, container.cpuLimit) : CPU_MAX;
+  const memoryMax = customResources === false ? Math.max(DEFAULT_RESOURCES.memoryLimit, container.memoryLimit) : MEMORY_MAX;
   const dirty = isFormDirty(form, container);
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]): void => setForm((prev) => ({ ...prev, [key]: value }));
 
@@ -83,10 +89,10 @@ export default function ContainerEditForm({ container, track, environment, onClo
 
       <Stack direction={{ xs: 'column', md: 'row' }} gap={4} sx={{ mb: 3 }}>
         <Box sx={{ flex: 1 }}>
-          <RangeSlider label="CPU request / limit" unit="m" min={CPU_MIN} max={CPU_MAX} step={CPU_STEP} request={form.cpuRequest} limit={form.cpuLimit} onChange={(r, l) => setForm((p) => ({ ...p, cpuRequest: r, cpuLimit: l }))} />
+          <RangeSlider label="CPU request / limit" unit="m" min={CPU_MIN} max={cpuMax} step={CPU_STEP} request={form.cpuRequest} limit={form.cpuLimit} onChange={(r, l) => setForm((p) => ({ ...p, cpuRequest: r, cpuLimit: l }))} />
         </Box>
         <Box sx={{ flex: 1 }}>
-          <RangeSlider label="Memory request / limit" unit="Mi" min={MEMORY_MIN} max={MEMORY_MAX} step={MEMORY_STEP} request={form.memoryRequest} limit={form.memoryLimit} onChange={(r, l) => setForm((p) => ({ ...p, memoryRequest: r, memoryLimit: l }))} />
+          <RangeSlider label="Memory request / limit" unit="Mi" min={MEMORY_MIN} max={memoryMax} step={MEMORY_STEP} request={form.memoryRequest} limit={form.memoryLimit} onChange={(r, l) => setForm((p) => ({ ...p, memoryRequest: r, memoryLimit: l }))} />
         </Box>
       </Stack>
 
@@ -110,6 +116,11 @@ export default function ContainerEditForm({ container, track, environment, onClo
         <Alert severity="error" sx={{ mb: 2 }}>
           {errors[0]}
         </Alert>
+      )}
+      {customResources === false && errors.length === 0 && (
+        <Box sx={{ mb: 2 }}>
+          <PlanUpgradeHint message={`Your plan runs each container with up to ${DEFAULT_RESOURCES.cpuLimit}m CPU and ${DEFAULT_RESOURCES.memoryRequest}Mi / ${DEFAULT_RESOURCES.memoryLimit}Mi memory. Upgrade to a paid plan for more.`} />
+        </Box>
       )}
 
       <Stack direction="row" gap={1.5} sx={{ mt: 2 }}>

@@ -1,3 +1,4 @@
+import type { Usage } from '../types/metrics';
 import type { Pod, UsageSummary } from '../types/runtime';
 
 /** Millicores -> "0.25 vCPU". */
@@ -37,9 +38,12 @@ function summarize(pods: Pod[], used: (p: Pod) => number | undefined, request: (
   return summary;
 }
 
-/** Totals CPU/memory across all pods. Usage is only reported when every pod has it (metrics are P1). */
-export function aggregateUsage(pods: Pod[]): { cpu: UsageSummary; memory: UsageSummary } {
-  return {
+/**
+ * Totals CPU/memory across all pods. Usage comes from `totals` (the environment's usage, as the observability
+ * plane reports it) when given, else from the pods — only when every pod reports it.
+ */
+export function aggregateUsage(pods: Pod[], totals?: Usage): { cpu: UsageSummary; memory: UsageSummary } {
+  const out = {
     cpu: summarize(
       pods,
       (p) => p.cpuUsageMillicores,
@@ -53,4 +57,7 @@ export function aggregateUsage(pods: Pod[]): { cpu: UsageSummary; memory: UsageS
       (p) => p.memoryLimitBytes,
     ),
   };
+  const withTotal = (s: UsageSummary, used: number | undefined): UsageSummary =>
+    used === undefined || pods.length === 0 ? s : { ...s, used, percent: usagePercent(used, s.limit) };
+  return { cpu: withTotal(out.cpu, totals?.cpuMillicores), memory: withTotal(out.memory, totals?.memoryBytes) };
 }

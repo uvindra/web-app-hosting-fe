@@ -22,12 +22,12 @@ export interface Pod {
   ready: string;
   restarts: number;
   startedAt: string;
-  /** Absent until usage metrics exist (P1): `undefined` means "not available", never 0. */
+  /** Set only when the environment runs this one pod (usage is reported as totals): `undefined` means "not available", never 0. */
   cpuUsageMillicores?: number;
   /** First container's request/limit; 0 when unset. */
   cpuRequestMillicores: number;
   cpuLimitMillicores: number;
-  /** Absent until usage metrics exist (P1). */
+  /** As cpuUsageMillicores. */
   memoryUsageBytes?: number;
   memoryRequestBytes: number;
   memoryLimitBytes: number;

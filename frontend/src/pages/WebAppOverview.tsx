@@ -19,6 +19,19 @@ import type { TrackRef } from '../types/track';
 
 function SourceLink({ webApp }: { webApp: WebApp }): JSX.Element | null {
   if (!webApp.repoUrl) return null;
+  if (webApp.sourceType === 'docker') {
+    // `repoUrl` holds the image reference for image-sourced web apps.
+    return (
+      <Stack direction="row" alignItems="center" gap={1}>
+        <Typography variant="body2" color="text.secondary">
+          Image:
+        </Typography>
+        <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+          {webApp.repoUrl}
+        </Typography>
+      </Stack>
+    );
+  }
   const Icon = webApp.sourceType === 'github' ? Github : GitBranch;
   return (
     <Stack direction="row" alignItems="center" gap={1}>
@@ -147,7 +160,7 @@ function OverviewContent({ ctx }: { ctx: ReadyContext }): JSX.Element {
         )}
       </Stack>
 
-      <LatestBuildCard track={track} buildUrl={withTrack(webAppBuildUrl(scope.org, scope.project, scope.webApp), trackParam)} />
+      {webApp.sourceType !== 'docker' && <LatestBuildCard track={track} buildUrl={withTrack(webAppBuildUrl(scope.org, scope.project, scope.webApp), trackParam)} />}
 
       {loadingDeployments ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>

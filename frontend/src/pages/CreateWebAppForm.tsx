@@ -67,15 +67,6 @@ const BUILD_PRESETS: { value: BuildPreset; label: string }[] = [
   { value: 'docker', label: 'Docker' },
 ];
 
-const REGISTRY_TYPES: { value: CreateWebAppDockerInput['registryType']; label: string }[] = [
-  { value: 'dockerhub', label: 'Docker Hub' },
-  { value: 'acr', label: 'Azure Container Registry' },
-  { value: 'ecr', label: 'Amazon ECR' },
-  { value: 'gcr', label: 'Google Container Registry' },
-  { value: 'ghcr', label: 'GitHub Container Registry' },
-  { value: 'other', label: 'Other' },
-];
-
 const REGISTRY_LABEL_FOR_PROVIDER: Record<'bitbucket' | 'gitlab' | 'azure', string> = {
   bitbucket: 'Bitbucket',
   gitlab: 'GitLab',
@@ -83,6 +74,8 @@ const REGISTRY_LABEL_FOR_PROVIDER: Record<'bitbucket' | 'gitlab' | 'azure', stri
 };
 
 const HANDLER_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+/** `[registry[:port]/]repository` in lowercase, no tag or digest (matches the BFF's check). */
+const IMAGE_RE = /^([a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+)?\/)?[a-z0-9]+([._-][a-z0-9]+)*(\/[a-z0-9]+([._-][a-z0-9]+)*)*$/;
 
 const BRANCH_LOOKUP_DEBOUNCE_MS = 500;
 
@@ -205,10 +198,8 @@ export default function CreateWebAppForm(): JSX.Element {
   const kind = presetKind(buildPreset);
 
   // Docker fields
-  const [registryType, setRegistryType] = useState<CreateWebAppDockerInput['registryType']>('dockerhub');
   const [image, setImage] = useState('');
   const [tag, setTag] = useState('latest');
-  const [credentialRef, setCredentialRef] = useState('');
 
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -241,7 +232,8 @@ export default function CreateWebAppForm(): JSX.Element {
   };
 
   const gitReady = isAuthenticatedGitHub ? !!gitOrganization.trim() && !!repository.trim() : !!repository.trim();
-  const dockerReady = !!image.trim();
+  const imageError = image.trim() && !IMAGE_RE.test(image.trim()) ? 'Lowercase image name without a tag, e.g. nginxinc/nginx-unprivileged or ghcr.io/org/app' : null;
+  const dockerReady = !!image.trim() && !imageError;
   const canSubmit = !!displayName.trim() && !!effectiveHandler && !handlerError && portValid && (isDocker ? dockerReady : gitReady) && !createWebApp.isPending;
 
   if (loadingProject) {
@@ -282,10 +274,8 @@ export default function CreateWebAppForm(): JSX.Element {
             displayName: displayName.trim(),
             handler: effectiveHandler,
             description: description.trim() || undefined,
-            registryType,
             image: image.trim(),
             tag: tag.trim() || 'latest',
-            credentialRef: credentialRef.trim() || undefined,
             port: portNumber,
           }
         : {
@@ -405,26 +395,17 @@ export default function CreateWebAppForm(): JSX.Element {
       {isDocker && (
         <>
           <Typography variant="h6" component="h2" sx={{ mt: 4, mb: 2 }}>
-            Container Registry
+            Container Image
           </Typography>
+          <Alert severity="info" sx={{ mb: 3 }}>
+            The image must be publicly pullable (Docker Hub, GitHub Container Registry, Amazon ECR Public, …); private registries aren&apos;t supported yet. It runs as user 65534 with a read-only file system — only <code>/tmp</code> is writable — so it must not need root or write elsewhere (e.g. <code>nginxinc/nginx-unprivileged</code> rather than <code>nginx</code>).
+          </Alert>
           <Grid container spacing={3} sx={{ mb: 4 }}>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <Select fullWidth value={registryType} onChange={(e) => setRegistryType(e.target.value as CreateWebAppDockerInput['registryType'])} size="medium">
-                {REGISTRY_TYPES.map((r) => (
-                  <MenuItem key={r.value} value={r.value}>
-                    {r.label}
-                  </MenuItem>
-                ))}
-              </Select>
+            <Grid size={{ xs: 12, md: 8 }}>
+              <TextField label="Image" required placeholder="e.g. nginxinc/nginx-unprivileged or ghcr.io/org/app" value={image} onChange={(e) => setImage(e.target.value)} fullWidth error={!!imageError} helperText={imageError ?? 'Registry and repository, without the tag'} />
             </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
+            <Grid size={{ xs: 12, md: 4 }}>
               <TextField label="Tag" value={tag} onChange={(e) => setTag(e.target.value)} fullWidth />
-            </Grid>
-            <Grid size={{ xs: 12 }}>
-              <TextField label="Image" required placeholder="e.g. myorg/my-web-app" value={image} onChange={(e) => setImage(e.target.value)} fullWidth />
-            </Grid>
-            <Grid size={{ xs: 12 }}>
-              <TextField label="Registry credential (optional)" placeholder="Secret reference" value={credentialRef} onChange={(e) => setCredentialRef(e.target.value)} fullWidth helperText="No credential picker yet — paste a secret reference." />
             </Grid>
           </Grid>
         </>

@@ -1,6 +1,6 @@
 import { useState, type JSX } from 'react';
 import { useNavigate } from 'react-router';
-import { Box, Button, Card, CardContent, Chip, CircularProgress, Grid, PageContent, Stack, Typography } from '@wso2/oxygen-ui';
+import { Box, Button, Card, CardContent, CircularProgress, Grid, PageContent, Stack, Typography } from '@wso2/oxygen-ui';
 import { ArrowLeft, Container, GitBranch } from '@wso2/oxygen-ui-icons-react';
 import EmptyListing from '../components/EmptyListing';
 import SampleCard from '../components/SampleCard';
@@ -8,7 +8,7 @@ import { useProjectByHandler } from '../hooks/useProjects';
 import { useCreateSampleWebApp } from '../hooks/useWebApps';
 import { useSamples } from '../hooks/useSamples';
 import { hasProject, useScope } from '../nav';
-import { importWebAppUrl, projectHomeUrl, webAppOverviewUrl } from '../paths';
+import { configureWebAppUrl, importWebAppUrl, projectHomeUrl, webAppOverviewUrl } from '../paths';
 import ErrorAlert from '../components/ErrorAlert';
 import type { Sample } from '../types/sample';
 
@@ -100,16 +100,16 @@ export default function CreateWebAppOptions(): JSX.Element {
             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
               Connect a Docker Image
             </Typography>
-            {/* Docker image import is P1: shown, but not selectable yet. */}
-            <Card variant="outlined" sx={{ opacity: 0.6 }} aria-disabled>
+            {/* Public container images (private registries are not supported yet). */}
+            <Card variant="outlined" sx={{ cursor: 'pointer', '&:hover': { borderColor: 'primary.main' } }} onClick={() => navigate(configureWebAppUrl(scope.org, project.handler), { state: { sourceType: 'docker' } })}>
               <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <Container size={22} />
                 <Box sx={{ flex: 1 }}>
                   <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                    Container Registry <Chip label="Coming soon" size="small" color="info" sx={{ ml: 1 }} />
+                    Container Registry
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Deploy from an existing container image
+                    Deploy a public container image
                   </Typography>
                 </Box>
               </CardContent>

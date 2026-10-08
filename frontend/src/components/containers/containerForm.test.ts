@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { WebAppContainer } from '../../types/containers';
-import { containerToForm, formToUpdate, isFormDirty, splitLines, validateForm } from './containerForm';
+import { DEFAULT_RESOURCES, containerToForm, exceedsDefaults, formToUpdate, isFormDirty, splitLines, validateForm } from './containerForm';
 
 const container: WebAppContainer = {
   id: 'c1',
@@ -29,5 +29,21 @@ describe('containerForm', () => {
     const f = containerToForm(container);
     expect(validateForm(f)).toEqual([]);
     expect(validateForm({ ...f, cpuRequest: 900 })).toHaveLength(1);
+  });
+});
+
+describe('plan gating', () => {
+  const defaults = { ...containerToForm(container), ...DEFAULT_RESOURCES };
+  it('allows the defaults and less on every plan', () => {
+    expect(exceedsDefaults(defaults)).toBe(false);
+    expect(validateForm(defaults, false)).toEqual([]);
+    expect(validateForm({ ...defaults, cpuRequest: 50, memoryRequest: 128, memoryLimit: 512 }, false)).toEqual([]);
+  });
+  it('rejects more than the defaults on a free plan only', () => {
+    const more = { ...defaults, memoryLimit: 2048 };
+    expect(exceedsDefaults(more)).toBe(true);
+    expect(validateForm(more, false)).toHaveLength(1);
+    expect(validateForm(more, true)).toEqual([]);
+    expect(validateForm(more)).toEqual([]);
   });
 });

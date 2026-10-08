@@ -1,6 +1,7 @@
 import type { JSX } from 'react';
 import { Alert, Button } from '@wso2/oxygen-ui';
-import { isQuotaExceeded } from '../types/http';
+import { isPlanRequired, isQuotaExceeded } from '../types/http';
+import PlanUpgradeHint from './PlanUpgradeHint';
 
 interface ErrorAlertProps {
   error: unknown;
@@ -11,7 +12,8 @@ interface ErrorAlertProps {
 
 /**
  * Error alert that recognises the plan quota (BFF 402 `QUOTA_EXCEEDED`, D7): each deployment track
- * counts as one unit and the free plan allows 3. Links to the billing console when configured.
+ * counts as one unit and the free plan allows 3 — and paid-only features (BFF 403 `PLAN_REQUIRED`).
+ * Links to the billing console when configured.
  */
 export default function ErrorAlert({ error, fallback, onClose }: ErrorAlertProps): JSX.Element {
   if (isQuotaExceeded(error)) {
@@ -31,6 +33,9 @@ export default function ErrorAlert({ error, fallback, onClose }: ErrorAlertProps
         Quota reached — upgrade your plan to create more web apps or deployment tracks. Each deployment track counts towards your plan's limit.
       </Alert>
     );
+  }
+  if (isPlanRequired(error)) {
+    return <PlanUpgradeHint message={error instanceof Error ? error.message : fallback} onClose={onClose} />;
   }
   return (
     <Alert severity="error" role="alert" onClose={onClose}>

@@ -19,14 +19,23 @@ export const METRICS_REFRESH_INTERVALS: { value: number; label: string }[] = [
 export type MetricsDatum = { label: string } & Record<string, number | string>;
 
 export interface WebAppMetrics {
-  /** requests per second: total, success (2xx/3xx) */
+  /** requests per second: total, success */
   requestRows: MetricsDatum[];
-  /** milliseconds: p50, p95, p99 */
+  /** milliseconds: p50, p90, p99 */
   latencyRows: MetricsDatum[];
-  /** percent of requests: clientErrors (4xx), serverErrors (5xx) */
+  /** percent of requests that failed: errorRate */
   errorRows: MetricsDatum[];
-  /** vCPU: usage, request, limit */
+  /** vCPU: usage, request, limit — totals across the environment's pods */
   cpuRows: MetricsDatum[];
-  /** MB: usage, request, limit */
+  /** MB: usage, request, limit — totals across the environment's pods */
   memoryRows: MetricsDatum[];
+  /** False when the platform records no HTTP metrics for the web app: the HTTP charts are hidden. */
+  httpAvailable: boolean;
+}
+
+/** An environment's latest resource usage, totals across its pods (fields absent without a sample). */
+export interface Usage {
+  cpuMillicores?: number;
+  memoryBytes?: number;
+  sampledAt?: string;
 }

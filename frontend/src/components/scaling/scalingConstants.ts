@@ -4,18 +4,16 @@ export interface ScalingMethodOption {
   value: ScalingMethod;
   title: string;
   description: string;
-  badge?: string;
-  /** Not available yet (P1): shown but not selectable. */
-  comingSoon?: boolean;
+  /** Needs a paid plan (PlanLimits.autoscaling). */
+  paidOnly?: boolean;
 }
 
 export const SCALING_METHODS: ScalingMethodOption[] = [
   {
     value: ScalingMethod.HPA,
     title: 'HPA',
-    description: 'Scales the number of replicas based on CPU and memory usage.',
-    badge: 'Coming soon',
-    comingSoon: true,
+    description: 'Scales the number of replicas between a minimum and a maximum based on CPU and/or memory utilization.',
+    paidOnly: true,
   },
   {
     value: ScalingMethod.None,
@@ -27,5 +25,6 @@ export const SCALING_METHODS: ScalingMethodOption[] = [
 /** Cap on replicas per environment. */
 export const MAX_REPLICAS = 5;
 
-export const CPU_THRESHOLD = { min: 10, max: 100, default: 50 };
-export const MEMORY_THRESHOLD = { min: 20, max: 200, default: 50 };
+/** Utilization targets, as a percentage of the container's request (the BFF accepts 1–100). */
+export const CPU_THRESHOLD = { min: 10, max: 100, default: 70 };
+export const MEMORY_THRESHOLD = { min: 10, max: 100, default: 80 };

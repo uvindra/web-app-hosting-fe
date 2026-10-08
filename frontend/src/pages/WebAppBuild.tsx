@@ -6,6 +6,7 @@ import BuildConfigPanel from '../components/build/BuildConfigPanel';
 import BuildDetailsDrawer from '../components/build/BuildDetailsDrawer';
 import BuildHistory from '../components/build/BuildHistory';
 import LatestCommitCard from '../components/build/LatestCommitCard';
+import ImageSourcePanel from '../components/build/ImageSourcePanel';
 import { useBuildConfig, useBuildLogs, useBuildRuns, useLatestCommit, useTriggerBuild } from '../hooks/useBuilds';
 import type { TrackRef } from '../types/track';
 
@@ -56,7 +57,9 @@ function BuildContent({ track }: { track: TrackRef }): JSX.Element {
 export default function WebAppBuild(): JSX.Element {
   return (
     <WebAppPage title="Build" description="Build your web app from source and review build history.">
-      {({ track }) => <BuildContent track={track} />}
+      {({ webApp, track, environments }) =>
+        webApp.sourceType === 'docker' ? <ImageSourcePanel track={track} targetEnvName={environments[0]?.name ?? 'the first environment'} /> : <BuildContent track={track} />
+      }
     </WebAppPage>
   );
 }

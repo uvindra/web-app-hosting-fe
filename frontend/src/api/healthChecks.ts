@@ -1,27 +1,15 @@
 import type { HealthCheck } from '../types/healthChecks';
 import type { EnvironmentId } from '../types/webApp';
-import { MOCK_HEALTH_CHECKS, defaultHealthCheck } from '../mock-data/healthChecks';
+import type { TrackRef } from '../types/track';
+import { webAppHostingClient } from './httpClient';
+import { envPath } from './trackPath';
 
-// STUB (P1) — no backend yet; the Health Checks / Metrics pages show a "coming soon" notice instead.
-const NETWORK_DELAY_MS = 200;
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/** In-memory copy so edits persist for the session. */
-const store: Record<string, HealthCheck> = {};
-const keyOf = (webAppId: string, environment: EnvironmentId) => `${webAppId}:${environment}`;
-
-function current(webAppId: string, environment: EnvironmentId): HealthCheck {
-  return store[keyOf(webAppId, environment)] ?? MOCK_HEALTH_CHECKS[webAppId]?.[environment] ?? defaultHealthCheck(environment);
+/** The environment's probes. An unset readiness probe means the platform default (TCP check on the web app's port). */
+export async function fetchHealthCheck(track: TrackRef, environment: EnvironmentId): Promise<HealthCheck> {
+  return webAppHostingClient.get<HealthCheck>(`${envPath(track, environment)}/health-check`);
 }
 
-export async function fetchHealthCheck(webAppId: string, environment: EnvironmentId): Promise<HealthCheck> {
-  await delay(NETWORK_DELAY_MS);
-  return current(webAppId, environment);
-}
-
-/** Replaces the environment's probes. Omit a probe to remove it. */
-export async function updateHealthCheck(webAppId: string, environment: EnvironmentId, data: HealthCheck): Promise<HealthCheck> {
-  await delay(NETWORK_DELAY_MS);
-  store[keyOf(webAppId, environment)] = data;
-  return data;
+/** Replaces the environment's probes (omit a probe to remove it). Rolls the environment's pods. */
+export async function updateHealthCheck(track: TrackRef, environment: EnvironmentId, data: HealthCheck): Promise<HealthCheck> {
+  return webAppHostingClient.put<HealthCheck>(`${envPath(track, environment)}/health-check`, data);
 }

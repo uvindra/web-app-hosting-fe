@@ -21,7 +21,7 @@ type Drawer = { kind: 'logs' | 'events'; podName: string } | null;
 
 const PHASE_COLOR = { Running: 'success', Pending: 'warning', Failed: 'error', Succeeded: 'default' } as const;
 
-/** A usage bar once metrics exist (P1); "—" until then, never a fake 0%. */
+/** A usage bar when the pod's usage is known (single-replica environments); "—" otherwise, never a fake 0%. */
 function UsageCell({ used, limit, label }: { used: number | undefined; limit: number; label: string }): JSX.Element {
   if (used === undefined) {
     return (

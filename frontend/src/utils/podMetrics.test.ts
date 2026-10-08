@@ -50,4 +50,12 @@ describe('podMetrics', () => {
   it('reports no usage when any pod lacks it', () => {
     expect(aggregateUsage([pod({ cpu: 50, mem: 10 }), pod({})]).cpu.used).toBeUndefined();
   });
+  it('uses the environment totals when given, even without per-pod usage', () => {
+    const agg = aggregateUsage([pod({}), pod({})], { cpuMillicores: 50, memoryBytes: 40 });
+    expect(agg.cpu).toEqual({ used: 50, request: 100, limit: 200, percent: 25 });
+    expect(agg.memory.percent).toBe(20);
+    // A total without a field keeps that resource without usage; no pods = nothing to show.
+    expect(aggregateUsage([pod({}), pod({})], { cpuMillicores: 50 }).memory.used).toBeUndefined();
+    expect(aggregateUsage([], { cpuMillicores: 50 }).cpu.used).toBeUndefined();
+  });
 });

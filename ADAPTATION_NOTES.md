@@ -63,11 +63,11 @@ endpoint-and-visibility drawers / subscription and BYOI gating / gateway-logs ta
 
 `src/api/*.ts` call the BFF (`webAppHostingClient`, base `VITE_WEBAPP_API_URL`; contract
 `backend/api/openapi.yaml`) — projects, web apps, deployment tracks, builds (+ step logs),
-deployments, runtime, containers, fixed-replica scaling, configs/secrets/files, runtime logs and
-default URLs. The BFF runs against WSO2 Cloud (`TARGET=wso2cloud`) or a local OpenChoreo
-(`TARGET=openchoreo`). Still stubs (their pages show "Coming soon" instead of mock data):
-`healthChecks.ts`, `metrics.ts` (P1) and custom domains in `urlSettings.ts` (P2); HPA and Docker
-image import are visible but disabled (P1). `src/contexts/AccessControlContext.tsx` /
+deployments, runtime (+ usage), containers, scaling (fixed replicas and HPA), health checks, metrics,
+configs/secrets/files, runtime logs, default URLs, image-sourced web apps and the org's plan
+(`GET /plan`). The BFF runs against WSO2 Cloud (`TARGET=wso2cloud`) or a local OpenChoreo
+(`TARGET=openchoreo`). Still a stub (its page shows "Coming soon" instead of mock data): custom
+domains in `urlSettings.ts` (P2). `src/contexts/AccessControlContext.tsx` /
 `src/components/Authorized.tsx` are still an **always-allow stub** (same as ICP cloud).
 
 Unlike ipaas, every web-app page is **per deployment track**: a track is one branch, backed by one
@@ -76,6 +76,16 @@ OpenChoreo Component. The selected track lives in `?track=` (`paths.withTrack`),
 `TrackRef {webAppId, trackId}`; `WebAppPage` renders the track picker. Environments come from the
 project's deployment pipeline (`useProjectEnvironments`), not a hardcoded list; `WebAppPage
 withEnvironment` renders the environment picker.
+
+### Plan gating (free vs paid)
+
+The BFF reads the org's plan (billing user API on WSO2 Cloud; `LOCAL_PLAN=free|paid` locally) and
+answers `403 PLAN_REQUIRED` for paid-only features: HPA, more than 1 fixed replica, container resources
+above the defaults (CPU 100m, memory 350Mi / 1Gi) and deploying past the first environment. The console
+reads `GET /plan` (`usePlan`) to disable those controls with an upgrade hint (`PlanUpgradeHint`, linking
+to `BILLING_CONSOLE_URL` when set); `ErrorAlert` also recognises `PLAN_REQUIRED`. The plan badge and the
+"Upgrade" button in the header show only when billing is configured (not locally) — ipaas'
+`AppLayout` has the same badge + upgrade pattern.
 
 ### Auth: ported, but simplified to one path
 
@@ -96,7 +106,9 @@ free plan; billing UI is hidden without it.
   installation → repository → branch pickers. A 409 opens the App install page.
 - **Public GitHub repositories**: URL paste plus a live branch picker.
 - Other providers (Bitbucket/GitLab/Azure DevOps) are hidden for now (private non-GitHub repos are P2).
-- **Docker/container image import**: visible but disabled (P1).
+- **Container image import** ("Container Registry"): public images only — image + tag + port; private
+  registries aren't supported (no credential fields). Image web apps have no builds and a single track;
+  the Build page shows the image with a "Deploy tag" action.
 - **Build Preset selector** (12 presets, `src/pages/CreateWebAppForm.tsx`) is net-new. The BFF maps
   React/Angular/Vue/Static to its SPA workflow (nginx-unprivileged on 8080, so the port field is fixed
   for them), language presets to Paketo and Docker to the Dockerfile builder. Preset logos
@@ -130,6 +142,37 @@ one card per pipeline environment) — no registry, no plugin indirection.
   `AUTH_MODE=dev` (local only), which then uses its own client for every platform call.
 
 ## Changelog
+
+### 2026-10-08 — P1: health checks, HPA, container images, metrics, plan gating
+
+- **Health Checks page** is live (per track + environment, behind `DeployedGate`): liveness/readiness probes
+  (HTTP GET with headers, TCP, exec) via `GET/PUT …/environments/{env}/health-check`. Unset readiness = the
+  platform's default TCP check on the web app's port (shown on the card); the probe form prefills the web app's
+  port, which is the only one the BFF accepts. Saving restarts the environment's pods.
+- **Scaling: HPA** is selectable (min/max ≤ 5, CPU and/or memory utilization targets 10–100%), backed by the
+  BFF's own `web-app-hosting-hpa` trait; HPA settings are kept while autoscaling is off. Free plans see HPA
+  disabled ("Paid plans") and replicas capped at 1, with an upgrade hint.
+- **Metrics page** is live (ranges 30m / 1h / 6h / 24h): CPU and memory are totals across the environment's
+  replicas. The Observer reports p50/p90/p99 latency (no p95) and failed vs successful requests (no 4xx/5xx
+  split), so the latency series are p50/p90/p99 and the error chart is one "failed requests %" series. When the
+  platform has no HTTP metrics for the web app (`httpAvailable: false` — e.g. local k3d, no HTTP metric source)
+  the request/latency/error charts are hidden with a note. Rows come with an RFC 3339 `time`; `api/metrics.ts`
+  labels them in the viewer's local time. The mock generator (`mock-data/metrics.ts`, `seededRandom`, …) and
+  the health-check mocks are gone.
+- **Runtime/Scaling usage is real:** the Runtime cards use `GET …/usage` (latest totals across pods); per-pod
+  and per-replica usage is filled only when the environment runs a single pod (the platform reports totals).
+- **Container images:** the "Container Registry" create option is enabled — image (no tag) + tag + port, public
+  images only, with a note on the security profile (UID 65534, read-only FS, only `/tmp` writable). The registry
+  type selector and the free-text credential reference are removed. The BFF deploys the image to the first
+  environment on create; Build and Deploy pages show the image with "Deploy tag"; Overview shows the image
+  instead of a source link and no build card; Deployment Tracks hides "Create" (one track per image app);
+  deployment summaries show the deployed image.
+- **Plan gating:** see "Plan gating" above. Containers caps the sliders at the defaults on free plans; Deploy
+  disables promotion past the plan's environments.
+- Removed the "Coming soon" gates for health checks, metrics, HPA and Docker import.
+- BFF (same branch): CT v3 + HPA trait, release re-cut for pre-v3 releases, image-sourced tracks, metrics,
+  plan lookup; see `backend/api/openapi.yaml`.
+
 
 ### 2026-10-08 — Code-review fixes (deploy races, configs, logs paging, track naming)
 

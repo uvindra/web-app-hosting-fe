@@ -62,10 +62,9 @@ export interface CreateWebAppDockerInput {
   displayName: string;
   handler: string;
   description?: string;
-  registryType: 'dockerhub' | 'acr' | 'ecr' | 'gcr' | 'ghcr' | 'other';
+  /** A publicly pullable image without the tag, e.g. `nginxinc/nginx-unprivileged` or `ghcr.io/org/app`. */
   image: string;
   tag: string;
-  credentialRef?: string;
   port: number;
 }
 

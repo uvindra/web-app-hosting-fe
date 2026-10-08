@@ -15,3 +15,8 @@ export class HttpError extends Error {
 export function isQuotaExceeded(err: unknown): boolean {
   return err instanceof HttpError && (err.status === 402 || err.code === 'QUOTA_EXCEEDED');
 }
+
+/** The feature needs a paid plan (BFF 403 `PLAN_REQUIRED`). */
+export function isPlanRequired(err: unknown): boolean {
+  return err instanceof HttpError && err.code === 'PLAN_REQUIRED';
+}

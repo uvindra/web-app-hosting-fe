@@ -72,8 +72,9 @@ a `hooks/` TanStack Query wrapper.
 
 ## Backend (BFF) and what is still stubbed
 
-`src/api/*.ts` call the BFF in `backend/` (see `ADAPTATION_NOTES.md` → "Backend"). Health checks,
-metrics and custom domains are still stubs and their pages show "Coming soon". When the BFF grows an
+`src/api/*.ts` call the BFF in `backend/` (see `ADAPTATION_NOTES.md` → "Backend"). Custom domains
+are still a stub and show "Coming soon". Paid-only features are gated by the org's plan (`usePlan`;
+the BFF answers `403 PLAN_REQUIRED`). When the BFF grows an
 endpoint, add it to `backend/api/openapi.yaml` (a test keeps the router in sync), then replace the
 matching `src/api/*.ts` body; hooks only change for new parameters.
 

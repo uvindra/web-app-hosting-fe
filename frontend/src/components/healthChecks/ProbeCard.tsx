@@ -10,6 +10,8 @@ interface ProbeCardProps {
   busy: boolean;
   onConfigure: () => void;
   onDelete: () => void;
+  /** Shown while the probe is unset (e.g. the platform's default readiness check). */
+  unsetNote?: string;
 }
 
 const HELP: Record<ProbeKind, string> = {
@@ -18,7 +20,7 @@ const HELP: Record<ProbeKind, string> = {
 };
 
 /** One probe of the environment: its configuration when set, or a prompt to configure it. */
-export default function ProbeCard({ kind, probe, busy, onConfigure, onDelete }: ProbeCardProps): JSX.Element {
+export default function ProbeCard({ kind, probe, busy, onConfigure, onDelete, unsetNote }: ProbeCardProps): JSX.Element {
   const title = `${kind} Probe`;
   return (
     <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 3 }}>
@@ -55,6 +57,11 @@ export default function ProbeCard({ kind, probe, busy, onConfigure, onDelete }: 
         )}
       </Stack>
       {probe && <ProbeDisplay probe={probe} showSuccess={kind === PROBE_KIND.READINESS} />}
+      {!probe && unsetNote && (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
+          {unsetNote}
+        </Typography>
+      )}
     </Box>
   );
 }

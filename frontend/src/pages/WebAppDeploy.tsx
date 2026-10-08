@@ -3,18 +3,23 @@ import type { JSX } from 'react';
 import { Alert, Box, CircularProgress, Stack } from '@wso2/oxygen-ui';
 import WebAppPage from '../components/webapp/WebAppPage';
 import BuildArea from '../components/deploy/BuildArea';
+import ImageSourcePanel from '../components/build/ImageSourcePanel';
+import PlanUpgradeHint from '../components/PlanUpgradeHint';
 import DeployEnvironmentCard from '../components/deploy/DeployEnvironmentCard';
 import PromoteConnector from '../components/deploy/PromoteConnector';
 import { currentDeployment, historyFor } from '../components/deploy/deploymentUtils';
 import { useBuilds } from '../hooks/useBuilds';
 import { useDeployBuild, useDeployments, usePromote, useRedeploy, useStopDeployment } from '../hooks/useDeployments';
+import { usePlanLimits } from '../hooks/usePlan';
 import type { Build } from '../types/webApp';
 import type { Environment } from '../types/environment';
 import type { TrackRef } from '../types/track';
 
 /** Pipeline view: latest build, then one card per pipeline environment (in promotion order) with promote between them. */
-function DeployPipeline({ track, environments }: { track: TrackRef; environments: Environment[] }): JSX.Element {
+function DeployPipeline({ track, environments, fromImage }: { track: TrackRef; environments: Environment[]; fromImage: boolean }): JSX.Element {
   const { data: builds, isLoading: loadingBuilds } = useBuilds(track);
+  const limits = usePlanLimits();
+  const maxEnvironments = limits?.maxEnvironments ?? 0;
   const { data: deployments, isLoading: loadingDeployments, isError } = useDeployments(track);
   const deploy = useDeployBuild(track);
   const promote = usePromote(track);
@@ -46,7 +51,14 @@ function DeployPipeline({ track, environments }: { track: TrackRef; environments
 
   return (
     <Stack>
-      <BuildArea loading={loadingBuilds} latestBuild={latestBuild} deploying={deploy.isPending} targetEnvName={firstEnv.name} onDeploy={handleDeploy} />
+      {fromImage ? (
+        <ImageSourcePanel track={track} targetEnvName={firstEnv.name} />
+      ) : (
+        <BuildArea loading={loadingBuilds} latestBuild={latestBuild} deploying={deploy.isPending} targetEnvName={firstEnv.name} onDeploy={handleDeploy} />
+      )}
+      {maxEnvironments > 0 && environments.length > maxEnvironments && (
+        <PlanUpgradeHint message={`Your plan deploys to ${maxEnvironments === 1 ? `${firstEnv.name} only` : `the first ${maxEnvironments} environments`}. Upgrade to a paid plan to promote to ${environments[maxEnvironments].name}.`} />
+      )}
       {environments.map((env, index) => {
         const environment = env.id;
         const nextEnv = environments[index + 1];
@@ -59,6 +71,7 @@ function DeployPipeline({ track, environments }: { track: TrackRef; environments
               current={currentDeployment(deployments, environment)}
               history={historyFor(deployments, environment)}
               promoteTargetName={nextEnv?.name}
+              promoteBlockedReason={maxEnvironments > 0 && index + 1 >= maxEnvironments ? 'Not included in your plan — upgrade to promote' : undefined}
               canDeployBuild={index === 0 && latestBuild?.status === 'success'}
               busy={busy}
               error={failure instanceof Error ? failure.message : undefined}
@@ -77,7 +90,7 @@ function DeployPipeline({ track, environments }: { track: TrackRef; environments
 export default function WebAppDeploy(): JSX.Element {
   return (
     <WebAppPage title="Deploy" description="Deploy builds to the first environment and promote them along the project's pipeline.">
-      {({ track, environments }) => <DeployPipeline track={track} environments={environments} />}
+      {({ webApp, track, environments }) => <DeployPipeline track={track} environments={environments} fromImage={webApp.sourceType === 'docker'} />}
     </WebAppPage>
   );
 }

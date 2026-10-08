@@ -31,6 +31,7 @@ import { BarChart3, Boxes, ChevronDown, ChevronRight, Eye, Hammer, HeartPulse, K
 import { useAuth } from '../auth/AuthContext';
 import { useOrgs } from '../hooks/useOrgs';
 import { billingEnabled, planLabel, useBillingOrg } from '../hooks/useBilling';
+import { upgradeUrl, usePlan } from '../hooks/usePlan';
 import { useProjects, useProjectByHandler } from '../hooks/useProjects';
 import { hasProject, hasWebApp, resolveWebAppNavId, useScope, webAppNavGroupOf, WEB_APP_NAV_LEAVES } from '../nav';
 import type { WebAppNavId } from '../nav';
@@ -66,6 +67,9 @@ export default function AppLayout(): JSX.Element {
   // First-login billing activation (C10): activates the free plan, then feeds the plan badge.
   const { data: billingOrg } = useBillingOrg(scope.org);
   const plan = planLabel(billingOrg);
+  // Gating plan (BFF): a free org gets an "Upgrade" button next to the badge.
+  const { data: gatingPlan } = usePlan();
+  const upgradeHref = upgradeUrl();
   const projectHandler = hasProject(scope) ? scope.project : '';
   const { data: project } = useProjectByHandler(scope.org, projectHandler);
   const { data: projects = [] } = useProjects(scope.org);
@@ -302,6 +306,13 @@ export default function AppLayout(): JSX.Element {
                   sx={{ fontWeight: 500, mx: 0.75, cursor: window.API_CONFIG.billingConsoleUrl ? 'pointer' : 'default' }}
                   onClick={window.API_CONFIG.billingConsoleUrl ? () => window.open(window.API_CONFIG.billingConsoleUrl, '_blank', 'noopener') : undefined}
                 />
+              </Tooltip>
+            )}
+            {billingEnabled() && upgradeHref && gatingPlan?.type === 'free' && (
+              <Tooltip title="Autoscaling, more replicas and resources, and more environments">
+                <Button variant="contained" size="small" href={upgradeHref} target="_blank" rel="noopener noreferrer" sx={{ mx: 0.75 }}>
+                  Upgrade
+                </Button>
               </Tooltip>
             )}
             <ColorSchemeToggle />

@@ -5,6 +5,7 @@ import ScalingEditor from '../components/scaling/ScalingEditor';
 import ReplicasTable from '../components/scaling/ReplicasTable';
 import DeployedGate from '../components/runtime/DeployedGate';
 import { useScaling, useUpdateScaling } from '../hooks/useScaling';
+import { usePlanLimits } from '../hooks/usePlan';
 import type { EnvironmentId } from '../types/webApp';
 import type { TrackRef } from '../types/track';
 
@@ -16,6 +17,7 @@ interface Notice {
 function ScalingBody({ track, environment }: { track: TrackRef; environment: EnvironmentId }): JSX.Element {
   const { data: scaling, isLoading, isError, refetch } = useScaling(track, environment);
   const update = useUpdateScaling(track, environment);
+  const limits = usePlanLimits();
   const [notice, setNotice] = useState<Notice | null>(null);
 
   if (isLoading) {
@@ -45,6 +47,7 @@ function ScalingBody({ track, environment }: { track: TrackRef; environment: Env
       <ScalingEditor
         key={JSON.stringify(scaling)}
         saved={scaling}
+        limits={limits}
         isSaving={update.isPending}
         onSave={(config) =>
           update.mutate(config, {
@@ -67,7 +70,7 @@ function ScalingBody({ track, environment }: { track: TrackRef; environment: Env
 
 export default function WebAppScaling(): JSX.Element {
   return (
-    <WebAppPage title="Scaling" description="Set how many replicas run in each environment. Autoscaling (HPA) is coming soon." withEnvironment>
+    <WebAppPage title="Scaling" description="Run a fixed number of replicas, or autoscale them (HPA) on CPU and memory utilization, per environment." withEnvironment>
       {({ track, environment, environmentName }) => (
         <DeployedGate track={track} environment={environment} environmentName={environmentName}>
           <ScalingBody key={`${track.trackId}:${environment}`} track={track} environment={environment} />

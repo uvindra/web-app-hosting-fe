@@ -54,8 +54,10 @@ Prerequisites: the `k3d-openchoreo` cluster (OpenChoreo 1.3, namespace `default`
    ```
 
 Local differences from WSO2 Cloud: public GitHub repositories only (no GitHub App), secrets via the OpenChoreo Secret
-API, logs straight from the Observer, no billing (the console hides billing UI), builds are manual/auto-deploy only
-(GitHub push webhooks can't reach localhost).
+API, logs and metrics straight from the Observer (CPU/memory only — the local Prometheus has no HTTP request
+metrics), no billing (the console hides billing UI; every org is on `LOCAL_PLAN` = `paid` | `free` from
+`dev/local.env`, to try the plan gating), builds are manual/auto-deploy only (GitHub push webhooks can't reach
+localhost). Container-image web apps work the same (public images only).
 
 ## Checks
 

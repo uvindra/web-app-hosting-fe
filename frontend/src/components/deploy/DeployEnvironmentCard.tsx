@@ -16,6 +16,8 @@ interface DeployEnvironmentCardProps {
   history: Deployment[];
   /** Label of the next environment in the pipeline; undefined for the last one. */
   promoteTargetName?: string;
+  /** Why promoting is not allowed (e.g. the plan's environment limit); disables the action. */
+  promoteBlockedReason?: string;
   /** Whether a build is available to deploy directly into this environment (first stage only). */
   canDeployBuild: boolean;
   busy: boolean;
@@ -26,7 +28,7 @@ interface DeployEnvironmentCardProps {
   onPromote: () => void;
 }
 
-export default function DeployEnvironmentCard({ environmentName, current, history, promoteTargetName, canDeployBuild, busy, error, onDeployBuild, onRedeploy, onStop, onPromote }: DeployEnvironmentCardProps): JSX.Element {
+export default function DeployEnvironmentCard({ environmentName, current, history, promoteTargetName, promoteBlockedReason, canDeployBuild, busy, error, onDeployBuild, onRedeploy, onStop, onPromote }: DeployEnvironmentCardProps): JSX.Element {
   const [historyOpen, setHistoryOpen] = useState(false);
   const envName = environmentName;
   const running = current?.status === 'active';
@@ -77,9 +79,9 @@ export default function DeployEnvironmentCard({ environmentName, current, histor
           </Button>
         )}
         {promoteTargetName && (
-          <Tooltip title={running ? '' : 'Only an active deployment can be promoted'}>
+          <Tooltip title={promoteBlockedReason ?? (running ? '' : 'Only an active deployment can be promoted')}>
             <span>
-              <Button variant="outlined" size="small" startIcon={<ArrowDown size={14} />} disabled={busy || !running} onClick={onPromote}>
+              <Button variant="outlined" size="small" startIcon={<ArrowDown size={14} />} disabled={busy || !running || !!promoteBlockedReason} onClick={onPromote}>
                 {`Promote to ${promoteTargetName}`}
               </Button>
             </span>

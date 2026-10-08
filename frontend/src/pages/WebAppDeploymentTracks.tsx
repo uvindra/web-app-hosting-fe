@@ -41,11 +41,13 @@ export default function WebAppDeploymentTracks(): JSX.Element {
 
       <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2} sx={{ mb: 2 }}>
         <Typography variant="body2" color="text.secondary">
-          A deployment track builds and deploys this web app from a Git branch.
+          {webApp.sourceType === 'docker' ? 'This web app runs a container image, so it has a single deployment track.' : 'A deployment track builds and deploys this web app from a Git branch.'}
         </Typography>
-        <Button variant="contained" startIcon={<Plus size={16} />} onClick={() => setCreating(true)}>
-          Create Deployment Track
-        </Button>
+        {webApp.sourceType !== 'docker' && (
+          <Button variant="contained" startIcon={<Plus size={16} />} onClick={() => setCreating(true)}>
+            Create Deployment Track
+          </Button>
+        )}
       </Stack>
 
       {tracks.length === 0 ? (

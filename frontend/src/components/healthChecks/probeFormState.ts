@@ -54,10 +54,11 @@ export interface ProbeFormState {
   timeoutSeconds: number;
 }
 
-export function defaultProbeForm(): ProbeFormState {
+/** A new probe's form; `port` defaults to the web app's port. */
+export function defaultProbeForm(port: number = DEFAULT_PORT): ProbeFormState {
   return {
     type: PROBE_TYPE.HTTP_GET,
-    port: String(DEFAULT_PORT),
+    port: String(port),
     path: '/',
     httpHeaders: [],
     command: [],

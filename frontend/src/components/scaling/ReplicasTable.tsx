@@ -85,7 +85,7 @@ export default function ReplicasTable({ track, environment }: ReplicasTableProps
                       {pod.name}
                     </Typography>
                   </ListingTable.Cell>
-                  {/* Usage metrics arrive in P1: "—" until the BFF reports them, never a fake 0. */}
+                  {/* Per-replica usage is only known for a single replica (the platform reports totals): "—" otherwise, never a fake 0. */}
                   <ListingTable.Cell>{pod.cpuUsage === undefined ? '—' : `${pod.cpuUsage.toFixed(3)} vCPU`}</ListingTable.Cell>
                   <ListingTable.Cell>{pod.memoryUsageMb === undefined ? '—' : `${pod.memoryUsageMb} MB`}</ListingTable.Cell>
                   <ListingTable.Cell>

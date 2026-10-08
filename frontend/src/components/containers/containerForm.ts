@@ -53,9 +53,22 @@ export function isFormDirty(f: ContainerForm, c: WebAppContainer): boolean {
   return JSON.stringify(formToUpdate(f)) !== JSON.stringify(formToUpdate(containerToForm(c)));
 }
 
-export function validateForm(f: ContainerForm): string[] {
+/** The platform's default resources (CPU millicores, memory MiB); free plans can't go above them. */
+export const DEFAULT_RESOURCES = { cpuRequest: 100, cpuLimit: 100, memoryRequest: 350, memoryLimit: 1024 } as const;
+
+/** Whether the form asks for more than the default resources (a paid-plan feature). */
+export function exceedsDefaults(f: ContainerForm): boolean {
+  return f.cpuRequest > DEFAULT_RESOURCES.cpuRequest || f.cpuLimit > DEFAULT_RESOURCES.cpuLimit || f.memoryRequest > DEFAULT_RESOURCES.memoryRequest || f.memoryLimit > DEFAULT_RESOURCES.memoryLimit;
+}
+
+/** `customResources`: the plan allows resources above the defaults (undefined = unknown, not checked here). */
+export function validateForm(f: ContainerForm, customResources?: boolean): string[] {
   const errors: string[] = [];
   if (f.cpuRequest > f.cpuLimit) errors.push('CPU request cannot exceed the limit.');
   if (f.memoryRequest > f.memoryLimit) errors.push('Memory request cannot exceed the limit.');
+  if (customResources === false && exceedsDefaults(f)) {
+    const d = DEFAULT_RESOURCES;
+    errors.push(`Your plan allows up to ${d.cpuLimit}m CPU and ${d.memoryRequest}Mi / ${d.memoryLimit}Mi memory (request / limit). Upgrade to a paid plan for more.`);
+  }
   return errors;
 }
