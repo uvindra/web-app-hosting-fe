@@ -131,6 +131,33 @@ one card per pipeline environment) — no registry, no plugin indirection.
 
 ## Changelog
 
+### 2026-10-08 — Code-review fixes (deploy races, configs, logs paging, track naming)
+
+- **Deploys are serialized per track (BFF).** A release is cut by writing the build's workload onto the track's single
+  Workload and snapshotting it, so concurrent deploys of one track could cut a release holding another build's image.
+  `deployRun` now holds a per-track lock, the release's frozen image is checked against the build's after
+  `GenerateRelease` (mismatch → delete + re-cut, then 409), and an existing release is reused only when its image
+  matches (unbound mismatch → re-cut; bound → 409). The lock is process-local: with several BFF replicas the image
+  check is the backstop.
+- **Auto-deploy picks the newest build.** Watchers and `ListBuilds` request one coalesced pass per track (under the
+  same lock) that deploys only the newest finished successful pending build; older ones become `superseded`, failed
+  ones `done`, and a build older than an already auto-deployed one is never deployed.
+- **File configs:** a file config may not mount a file another file config already mounts at the same path (409, also
+  on update); deleting a config removes only its own entries.
+- **Track delete** also deletes the secret-store entries of the track's secret configs (best-effort, logged).
+- **Runtime-log paging:** the Observer filters `startTime`/`endTime` exclusively at second precision and returns
+  second-precision timestamps, so "Load more" (`end = cursor − 1s`) skipped lines. The cursor is now opaque (last
+  timestamp + keys of the already-returned lines within a second of it); the next page widens the window and de-dupes.
+- **Track naming:** new branch tracks are `<handle>--<branch-slug>`; new web-app handles can't contain `--`, so track
+  and web-app Component names can't collide. `Slug` keeps case-only branch differences apart. Existing
+  `<handle>-<slug>` tracks keep working (names are opaque IDs).
+- **Build logs:** step logs are read concurrently (≤4); the drawer refetches when the open build finishes and re-reads
+  the (lagging) archived logs for a minute after.
+- **Stale `?track=`:** an unknown track (stale link, or the selected track just deleted) falls back to the default
+  track and the URL is replaced without `?track=` (`paths.withoutTrack`).
+- **CLAUDE.md `?? ''`:** removed the instances this branch added (hooks take `string | undefined` + `skipToken`;
+  explicit guards in the config editor/list and create form; WebAppPage shows a "No environments" state).
+
 ### 2026-10-08 — Minor fixes from the P0 browser walkthrough
 
 - **Project home count:** the subtitle said "N web applications deployed" for every web app. It now reads
