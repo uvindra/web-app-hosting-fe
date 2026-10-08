@@ -37,8 +37,8 @@ type obsScope struct {
 func (o *ObserverLogs) QueryLogs(ctx context.Context, q LogQuery) ([]LogEntry, error) {
 	body := map[string]any{
 		"searchScope": obsScope{Namespace: q.Namespace, Project: q.Project, Component: q.Component, Environment: q.Environment, WorkflowRunName: q.WorkflowRunName},
-		"startTime":   q.Start.UTC().Format(time.RFC3339),
-		"endTime":     q.End.UTC().Format(time.RFC3339),
+		"startTime":   q.Start.UTC().Format(time.RFC3339Nano),
+		"endTime":     q.End.UTC().Format(time.RFC3339Nano),
 		"limit":       q.Limit,
 		"sortOrder":   q.SortOrder,
 	}

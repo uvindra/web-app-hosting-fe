@@ -1137,7 +1137,7 @@ paths:
   /webapps/{webAppId}/tracks/{trackId}/logs/query:
     post:
       operationId: queryRuntimeLogs
-      summary: Query archived runtime logs (time-cursor paging)
+      summary: Query archived runtime logs (opaque keyset-cursor paging)
       parameters:
       - name: webAppId
         in: path
@@ -1555,7 +1555,7 @@ components:
         searchPhrase: {type: string}
         sort: {type: string, enum: [asc, desc]}
         limit: {type: integer}
-        cursor: {type: string}
+        cursor: {type: string, description: "Opaque; the previous page's nextCursor."}
     LogRow:
       type: object
       properties:

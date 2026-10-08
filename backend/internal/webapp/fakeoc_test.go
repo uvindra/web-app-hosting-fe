@@ -245,18 +245,25 @@ func (m *memSecrets) Delete(_ context.Context, ref string) error {
 
 type fakeLogs struct {
 	entries []platform.LogEntry // newest first
-	queries []platform.LogQuery
-	mu      sync.Mutex
+	// inclusive switches from the live Observer's window semantics (bounds
+	// truncated to seconds, both exclusive) to inclusive, full-precision bounds.
+	inclusive bool
+	queries   []platform.LogQuery
+	mu        sync.Mutex
 }
 
-// QueryLogs answers like the Observer: [start, end] inclusive, at
-// millisecond precision, sorted by timestamp.
+// QueryLogs answers like the Observer: entries in the window, sorted by
+// timestamp (ties in a stable but arbitrary order), at most Limit.
 func (l *fakeLogs) QueryLogs(_ context.Context, q platform.LogQuery) ([]platform.LogEntry, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.queries = append(l.queries, q)
-	start, end := q.Start.Truncate(time.Millisecond), q.End.Truncate(time.Millisecond)
-	var out []platform.LogEntry
+	in := func(t time.Time) bool {
+		if l.inclusive {
+			return !t.Before(q.Start) && !t.After(q.End)
+		}
+		return t.After(q.Start.Truncate(time.Second)) && t.Before(q.End.Truncate(time.Second))
+	}
 	src := l.entries
 	if q.SortOrder == "asc" {
 		src = make([]platform.LogEntry, len(l.entries))
@@ -264,9 +271,9 @@ func (l *fakeLogs) QueryLogs(_ context.Context, q platform.LogQuery) ([]platform
 			src[len(l.entries)-1-i] = e
 		}
 	}
+	var out []platform.LogEntry
 	for _, e := range src {
-		t := e.Timestamp.Truncate(time.Millisecond)
-		if t.Before(start) || t.After(end) {
+		if !in(e.Timestamp) {
 			continue
 		}
 		out = append(out, e)
