@@ -41,9 +41,10 @@ type EnsureKind string
 const (
 	KindComponentType EnsureKind = "ComponentType"
 	KindWorkflow      EnsureKind = "Workflow"
+	KindTrait         EnsureKind = "Trait"
 )
 
-// EnsureVersioned creates the namespaced ComponentType / Workflow when absent
+// EnsureVersioned creates the namespaced ComponentType / Workflow / Trait when absent
 // and replaces it when the stored version annotation is lower than the
 // shipped one. Equal or higher stored versions are left untouched (a newer
 // BFF may already have rolled forward). Idempotent.
@@ -70,6 +71,12 @@ func (c *Client) EnsureVersioned(ctx context.Context, ns string, kind EnsureKind
 		status, respBody = r.StatusCode(), r.Body
 	case KindWorkflow:
 		r, err := c.oc.CreateWorkflowWithBodyWithResponse(ctx, ns, "application/json", bytes.NewReader(raw))
+		if err != nil {
+			return fmt.Errorf("ensure %s %q: %w", kind, name, err)
+		}
+		status, respBody = r.StatusCode(), r.Body
+	case KindTrait:
+		r, err := c.oc.CreateTraitWithBodyWithResponse(ctx, ns, "application/json", bytes.NewReader(raw))
 		if err != nil {
 			return fmt.Errorf("ensure %s %q: %w", kind, name, err)
 		}
@@ -109,6 +116,12 @@ func (c *Client) EnsureVersioned(ctx context.Context, ns string, kind EnsureKind
 				return err
 			}
 			st, b = r.StatusCode(), r.Body
+		case KindTrait:
+			r, err := c.oc.UpdateTraitWithBodyWithResponse(ctx, ns, gen.TraitNameParam(name), "application/json", bytes.NewReader(raw))
+			if err != nil {
+				return err
+			}
+			st, b = r.StatusCode(), r.Body
 		}
 		if st == http.StatusOK || st == http.StatusCreated {
 			return nil
@@ -131,6 +144,15 @@ func (c *Client) storedVersion(ctx context.Context, ns string, kind EnsureKind, 
 		meta = r.JSON200.Metadata
 	case KindWorkflow:
 		r, err := c.oc.GetWorkflowWithResponse(ctx, ns, gen.WorkflowNameParam(name))
+		if err != nil {
+			return 0, err
+		}
+		if r.JSON200 == nil {
+			return 0, respError(r.StatusCode(), r.Body)
+		}
+		meta = r.JSON200.Metadata
+	case KindTrait:
+		r, err := c.oc.GetTraitWithResponse(ctx, ns, gen.TraitNameParam(name))
 		if err != nil {
 			return 0, err
 		}

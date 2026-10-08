@@ -124,7 +124,7 @@ spec:
     - clusterworkflow:view
     - componenttype:*
     - workflow:*
-    - trait:view
+    - trait:*
     - project:*
     - projectrelease:view
     - projectreleasebinding:*

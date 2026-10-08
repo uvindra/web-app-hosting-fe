@@ -1,7 +1,8 @@
 // Package platformres renders the platform resources the BFF upserts into
 // every org's namespace on first use (D9): our ComponentType
-// `deployment/web-app-hosting` and the namespaced SPA workflow
-// `web-app-hosting-spa-builder`.
+// `deployment/web-app-hosting`, the namespaced SPA workflow
+// `web-app-hosting-spa-builder` and the autoscaling Trait
+// `web-app-hosting-hpa`.
 package platformres
 
 import (
@@ -17,13 +18,20 @@ import (
 // every template change: orgs whose stored version is lower are upgraded on
 // their next web-app create.
 // v2: default TCP readiness probe.
-const Version = 2
+// v3: liveness/readiness probe passthrough, private-registry pull secret,
+// HPA Trait (allowedTraits).
+const Version = 3
 
 const (
 	ComponentTypeName = "web-app-hosting"
 	// ComponentTypeRef is the `componentType.name` used on Components.
 	ComponentTypeRef = "deployment/web-app-hosting"
 	SPAWorkflowName  = "web-app-hosting-spa-builder"
+	// HPATraitName is our namespaced autoscaling Trait; HPATraitInstance is
+	// its instance name on every track Component (the key of the binding's
+	// traitEnvironmentConfigs).
+	HPATraitName     = "web-app-hosting-hpa"
+	HPATraitInstance = "hpa"
 )
 
 // Profile selects target-specific details.
@@ -45,6 +53,11 @@ type data struct {
 // ComponentType returns the ComponentType body.
 func ComponentType(p Profile) (map[string]any, error) {
 	return render("componenttype.yaml.tmpl", p)
+}
+
+// HPATrait returns the namespaced autoscaling Trait body.
+func HPATrait(p Profile) (map[string]any, error) {
+	return render("hpa-trait.yaml.tmpl", p)
 }
 
 // SPAWorkflow returns the namespaced SPA/static Workflow body.
