@@ -13,6 +13,7 @@ import { hasProject, useScope } from '../nav';
 import { newWebAppUrl, webAppOverviewUrl } from '../paths';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
 import { getStatusColor } from '../utils/statusColor';
+import { webAppSummary } from '../utils/webAppSummary';
 import type { WebApp, WebAppStatus } from '../types/webApp';
 import type { Sample } from '../types/sample';
 
@@ -87,7 +88,7 @@ export default function WebApps(): JSX.Element {
       <Stack sx={{ mb: 4 }}>
         <Typography variant="h1">{project.name}</Typography>
         <Typography variant="body2" color="text.secondary">
-          {webApps?.length ?? 0} web application{(webApps?.length ?? 0) === 1 ? '' : 's'} deployed
+          {webAppSummary(webApps ?? [])}
         </Typography>
       </Stack>
 
