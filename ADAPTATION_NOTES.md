@@ -130,6 +130,18 @@ one card per pipeline environment) — no registry, no plugin indirection.
 
 ## Changelog
 
+### 2026-10-08 — Fixes from the P0 browser walkthrough
+
+- **Branch lookup / GitHub rate limit:** the create form looked up branches on every keystroke of the repo URL
+  (mostly 404s), which used up the unauthenticated GitHub limit (60/h) and caused 403s elsewhere.
+  - Lookups now wait for a complete `https://github.com/<owner>/<repo>` (`utils/parseGitHubUrl.normalizeGitHubRepoUrl`)
+    and a 500ms pause (`hooks/useDebouncedValue`); `useBranches` keys on the normalized URL and keeps results for 60s.
+  - BFF: public GitHub reads (branches, latest commit, 404s too) are cached for 60s per request path, with concurrent
+    identical reads sharing one call; builds read the branch head fresh (`platform.WithFreshReads`). GitHub rate limits
+    map to `429 GIT_RATE_LIMITED` (message says when it resets), not a bare 403. Upstream timeouts map to `504 UPSTREAM_TIMEOUT`.
+  - Build page: the Latest Commit card degrades on its own ("Couldn't load the latest commit" + Retry; Build Latest
+    then builds the branch head) instead of failing the whole page.
+
 ### 2026-10-08 — Fix post-login redirect
 
 - **Full URL saved:** `ProtectedRoute` saved the full `window.location.href` as the page to return to after sign-in. `SignIn` then passed it to react-router's `navigate`, which expects an in-app path. Deep links didn't restore after login.

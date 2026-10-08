@@ -253,7 +253,7 @@ func (s *Service) TriggerBuild(ctx context.Context, webAppID, trackID, sha strin
 		return nil, err
 	}
 	commit := &platform.Commit{SHA: sha}
-	if c, err := s.p.Git.LatestCommit(ctx, t.repoRef(), t.Project, t.Name); err == nil {
+	if c, err := s.p.Git.LatestCommit(platform.WithFreshReads(ctx), t.repoRef(), t.Project, t.Name); err == nil {
 		if sha == "" || c.SHA == sha {
 			commit = c
 		}

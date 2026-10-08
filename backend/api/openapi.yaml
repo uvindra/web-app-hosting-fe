@@ -12,7 +12,10 @@ info:
     - A web app is a set of deployment tracks; a track (one branch) is one
       OpenChoreo Component, identified by `trackId` (the Component name).
     - Errors use `{code, message}`. `402 QUOTA_EXCEEDED` = the plan's track quota
-      is reached (PAS entitlement gate); `501 NOT_SUPPORTED` = a P1/P2 feature.
+      is reached (PAS entitlement gate); `501 NOT_SUPPORTED` = a P1/P2 feature;
+      `429 GIT_RATE_LIMITED` = the GitHub API rate limit is exhausted (public
+      GitHub reads are cached for ~60s); `502 UPSTREAM_ERROR` / `504
+      UPSTREAM_TIMEOUT` = OpenChoreo or a platform service failed / timed out.
 servers:
   - url: /webapp-hosting/api/v1
 security:
@@ -1208,7 +1211,7 @@ components:
       properties:
         code:
           type: string
-          enum: [BAD_REQUEST, UNAUTHORIZED, FORBIDDEN, NO_ORGANIZATION, NOT_FOUND, CONFLICT, QUOTA_EXCEEDED, NOT_SUPPORTED, UPSTREAM_ERROR]
+          enum: [BAD_REQUEST, UNAUTHORIZED, FORBIDDEN, NO_ORGANIZATION, NOT_FOUND, CONFLICT, QUOTA_EXCEEDED, NOT_SUPPORTED, GIT_RATE_LIMITED, UPSTREAM_ERROR, UPSTREAM_TIMEOUT]
         message: {type: string}
     Meta:
       type: object

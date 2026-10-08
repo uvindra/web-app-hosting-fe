@@ -11,7 +11,9 @@ import { hasProject, useScope } from '../nav';
 import { gitProviderBase, importWebAppUrl, newWebAppUrl, webAppOverviewUrl } from '../paths';
 import { isSpaPreset } from '../constants/buildPresets';
 import { toHandler } from '../utils/toHandler';
-import { parseGitHubUrl } from '../utils/parseGitHubUrl';
+import { normalizeGitHubRepoUrl, parseGitHubUrl } from '../utils/parseGitHubUrl';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { HttpError } from '../types/http';
 import type { BuildPreset, CreateWebAppDockerInput, CreateWebAppGitInput, WebAppSourceType } from '../types/webApp';
 import nodejsLogo from '../assets/build-presets/nodejs.svg';
 import reactLogo from '../assets/build-presets/react.svg';
@@ -82,6 +84,14 @@ const REGISTRY_LABEL_FOR_PROVIDER: Record<'bitbucket' | 'gitlab' | 'azure', stri
 
 const HANDLER_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
+const BRANCH_LOOKUP_DEBOUNCE_MS = 500;
+
+function branchErrorText(err: unknown): string {
+  if (err instanceof HttpError && err.code === 'GIT_RATE_LIMITED') return `${err.message} — enter a branch`;
+  if (err instanceof HttpError && err.status === 404) return 'Repository not found (is it public?) — enter a branch';
+  return 'Could not list branches — enter one';
+}
+
 /** Wireframe page 6 — the web app details/build-config form; page 7 (the creation loader) renders in its place while the create mutation is pending. */
 export default function CreateWebAppForm(): JSX.Element {
   const navigate = useNavigate();
@@ -128,11 +138,11 @@ export default function CreateWebAppForm(): JSX.Element {
   const [installationId, setInstallationId] = useState<number | undefined>();
   const effectiveInstallationId = installationId ?? installations.data?.[0]?.installationId;
   const repos = useGitHubRepos(isAuthenticatedGitHub ? effectiveInstallationId : undefined);
-  const parsedPublic = parseGitHubUrl(repoUrl);
-  const branchQuery = isAuthenticatedGitHub
-    ? { installationId: effectiveInstallationId, owner: gitOrganization, repo: repository }
-    : { repoUrl: parsedPublic ? `https://github.com/${parsedPublic.organization}/${parsedPublic.repository}` : '' };
-  const branches = useBranches(branchQuery, isAuthenticatedGitHub ? !!effectiveInstallationId && !!gitOrganization && !!repository : !!parsedPublic);
+  // Public repos: look branches up only for a complete https://github.com/<owner>/<repo> URL, once typing
+  // pauses — not per keystroke (the unauthenticated GitHub API allows 60 requests an hour).
+  const publicRepoUrl = normalizeGitHubRepoUrl(useDebouncedValue(repoUrl, BRANCH_LOOKUP_DEBOUNCE_MS));
+  const branchQuery = isAuthenticatedGitHub ? { installationId: effectiveInstallationId, owner: gitOrganization, repo: repository } : { repoUrl: publicRepoUrl ?? '' };
+  const branches = useBranches(branchQuery, isAuthenticatedGitHub ? !!effectiveInstallationId && !!gitOrganization && !!repository : !!publicRepoUrl);
 
   const effectiveHandler = handlerEdited ? handler : toHandler(displayName);
   const handlerError = !effectiveHandler ? null : !HANDLER_RE.test(effectiveHandler) ? 'Use lowercase letters, numbers and hyphens only' : null;
@@ -304,7 +314,7 @@ export default function CreateWebAppForm(): JSX.Element {
                   ))}
                 </Select>
               ) : (
-                <TextField label="Branch" value={branch} onChange={(e) => setBranch(e.target.value)} fullWidth helperText={branches.isError ? 'Could not list branches — enter one' : 'Branch'} />
+                <TextField label="Branch" value={branch} onChange={(e) => setBranch(e.target.value)} fullWidth helperText={branches.isError ? branchErrorText(branches.error) : 'Branch'} />
               )}
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>

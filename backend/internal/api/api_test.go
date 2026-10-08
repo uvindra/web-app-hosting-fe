@@ -2,6 +2,8 @@ package api
 
 import (
 	"bytes"
+	"context"
+	"fmt"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -257,5 +259,23 @@ func TestJWTRequired(t *testing.T) {
 	}
 	if resp, _ := http.Get(srv.URL + "/health"); resp.StatusCode != 200 {
 		t.Fatalf("health = %d", resp.StatusCode)
+	}
+}
+
+func TestStatusMapping(t *testing.T) {
+	cases := []struct {
+		err    error
+		status int
+		code   string
+	}{
+		{&platform.RateLimitError{}, http.StatusTooManyRequests, "GIT_RATE_LIMITED"},
+		{fmt.Errorf("list branches: %w", &platform.RateLimitError{}), http.StatusTooManyRequests, "GIT_RATE_LIMITED"},
+		{fmt.Errorf("create component: %w", context.DeadlineExceeded), http.StatusGatewayTimeout, "UPSTREAM_TIMEOUT"},
+		{openchoreo.NewAPIError(500, []byte(`{"error":"boom"}`)), http.StatusBadGateway, "UPSTREAM_ERROR"},
+	}
+	for _, c := range cases {
+		if s, code := Status(c.err); s != c.status || code != c.code {
+			t.Errorf("Status(%v) = %d %s, want %d %s", c.err, s, code, c.status, c.code)
+		}
 	}
 }

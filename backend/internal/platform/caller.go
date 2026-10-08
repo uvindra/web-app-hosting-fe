@@ -84,20 +84,3 @@ func (c *caller) do(ctx context.Context, method, url string, body, out any) erro
 	}
 	return json.Unmarshal(raw, out)
 }
-
-// send executes a prepared request (no auth added) and decodes a JSON response.
-func (c *caller) send(req *http.Request, out any) error {
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("%s %s: %w", req.Method, req.URL, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return openchoreo.NewAPIError(resp.StatusCode, raw)
-	}
-	if out == nil || len(bytes.TrimSpace(raw)) == 0 {
-		return nil
-	}
-	return json.Unmarshal(raw, out)
-}

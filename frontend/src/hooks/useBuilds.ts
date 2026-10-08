@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchBuildConfig, fetchBuildLogs, fetchBuildRuns, fetchBuilds, fetchEnvironments, fetchLatestCommit, triggerBuild } from '../api/builds';
 import type { LatestCommit } from '../types/build';
+import { HttpError } from '../types/http';
 import { trackKey, type TrackRef } from '../types/track';
 
 /** Status polling as in ICP: builds every 5s while one is running, 15s otherwise. */
@@ -64,13 +65,16 @@ export function useLatestCommit(track: TrackRef) {
     queryKey: ['latest-commit', ...trackKey(track)],
     queryFn: () => fetchLatestCommit(track),
     enabled: enabled(track),
+    staleTime: 30_000,
+    // Don't hammer GitHub once it rate-limits us (BFF 429 GIT_RATE_LIMITED).
+    retry: (failures, err) => !(err instanceof HttpError && err.status === 429) && failures < 2,
   });
 }
 
 export function useTriggerBuild(track: TrackRef) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (commit: LatestCommit) => triggerBuild(track, commit),
+    mutationFn: (commit: LatestCommit | undefined) => triggerBuild(track, commit),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['builds', ...trackKey(track)] });
       void queryClient.invalidateQueries({ queryKey: ['build-runs', ...trackKey(track)] });

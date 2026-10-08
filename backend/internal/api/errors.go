@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -46,8 +47,12 @@ func Status(err error) (int, string) {
 		return http.StatusForbidden, "FORBIDDEN"
 	case errors.Is(err, openchoreo.ErrUnauthorized):
 		return http.StatusUnauthorized, "UNAUTHORIZED"
+	case errors.Is(err, platform.ErrRateLimited):
+		return http.StatusTooManyRequests, "GIT_RATE_LIMITED"
 	case errors.Is(err, platform.ErrGitHubAppUnavailable):
 		return http.StatusNotImplemented, string(webapp.CodeNotSupported)
+	case errors.Is(err, context.DeadlineExceeded):
+		return http.StatusGatewayTimeout, "UPSTREAM_TIMEOUT"
 	default:
 		return http.StatusBadGateway, "UPSTREAM_ERROR"
 	}

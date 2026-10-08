@@ -19,7 +19,8 @@ function BuildContent({ track }: { track: TrackRef }): JSX.Element {
   // Step logs load on demand for the open build (live while it runs, archived afterwards).
   const logs = useBuildLogs(track, selectedId, selectedRun?.status === 'in-progress');
 
-  if (config.isLoading || runs.isLoading || commit.isLoading) {
+  // The latest commit (read from GitHub) degrades inside its own card; it doesn't block the page.
+  if (config.isLoading || runs.isLoading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
         <CircularProgress color="primary" />
@@ -27,18 +28,24 @@ function BuildContent({ track }: { track: TrackRef }): JSX.Element {
     );
   }
 
-  if (config.isError || runs.isError || commit.isError || !config.data || !runs.data || !commit.data) {
+  if (config.isError || runs.isError || !config.data || !runs.data) {
     return <Alert severity="error">Failed to load build information.</Alert>;
   }
 
-  const commitData = commit.data;
   // Status comes from the polled list; steps + logs from the logs query once loaded.
   const selected = selectedRun && logs.data ? { ...selectedRun, steps: logs.data.steps } : selectedRun;
 
   return (
     <Stack gap={3}>
       {trigger.isError && <Alert severity="error">Failed to trigger build: {trigger.error instanceof Error ? trigger.error.message : 'unknown error'}</Alert>}
-      <LatestCommitCard commit={commitData} building={trigger.isPending || runs.data.some((r) => r.status === 'in-progress')} onBuild={() => trigger.mutate(commitData)} />
+      <LatestCommitCard
+        commit={commit.data}
+        loading={commit.isLoading}
+        error={commit.error}
+        onRetry={() => void commit.refetch()}
+        building={trigger.isPending || runs.data.some((r) => r.status === 'in-progress')}
+        onBuild={() => trigger.mutate(commit.data)}
+      />
       <BuildHistory builds={runs.data} selectedId={selectedId} onSelect={(b) => setSelectedId(b.id)} />
       <BuildConfigPanel config={config.data} />
       <BuildDetailsDrawer build={selected} onClose={() => setSelectedId(undefined)} />

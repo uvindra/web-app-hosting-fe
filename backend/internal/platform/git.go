@@ -1,14 +1,23 @@
 package platform
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
+
+	"github.com/wso2/web-app-hosting/backend/internal/openchoreo"
 )
 
 // ErrGitHubAppUnavailable is returned for GitHub App calls on a target without one.
@@ -25,35 +34,180 @@ func ParseGitHubURL(u string) (owner, repo string, ok bool) {
 	return m[1], m[2], true
 }
 
+// ErrRateLimited is returned when the GitHub API rate limit is exhausted.
+var ErrRateLimited = errors.New("GitHub API rate limit exceeded")
+
+// RateLimitError is a GitHub rate-limit response (403 or 429 with
+// X-RateLimit-Remaining: 0, or a secondary rate limit).
+type RateLimitError struct {
+	// Reset is when the limit resets (zero when unknown).
+	Reset time.Time
+}
+
+func (e *RateLimitError) Error() string {
+	msg := "GitHub API rate limit exceeded"
+	if !e.Reset.IsZero() {
+		if d := time.Until(e.Reset).Round(time.Minute); d > 0 {
+			msg += fmt.Sprintf("; try again in about %s", d)
+		} else {
+			msg += "; try again shortly"
+		}
+	}
+	return msg + " (set GITHUB_TOKEN on the BFF to raise the limit)"
+}
+
+// Unwrap lets errors.Is match ErrRateLimited.
+func (e *RateLimitError) Unwrap() error { return ErrRateLimited }
+
+type freshKey struct{}
+
+// WithFreshReads makes cached git reads (branches, latest commit) bypass
+// the cache, e.g. when a build pins the branch head.
+func WithFreshReads(ctx context.Context) context.Context {
+	return context.WithValue(ctx, freshKey{}, true)
+}
+
+func fresh(ctx context.Context) bool { v, _ := ctx.Value(freshKey{}).(bool); return v }
+
+// DefaultGitHubCacheTTL is how long public GitHub API responses are reused.
+const DefaultGitHubCacheTTL = 60 * time.Second
+
 // PublicGitHub reads public repositories through the GitHub REST API
-// (TARGET=openchoreo, and public repos on WSO2 Cloud).
+// (TARGET=openchoreo, and public repos on WSO2 Cloud). Responses (including
+// 404s) are cached for CacheTTL per request path, and concurrent identical
+// requests share one upstream call: the unauthenticated API allows only
+// 60 requests an hour.
 type PublicGitHub struct {
 	APIURL string
 	Token  string // optional, raises the rate limit
 	HTTP   *http.Client
+	// CacheTTL is the response cache lifetime (0 = DefaultGitHubCacheTTL, <0 = off).
+	CacheTTL time.Duration
+
+	mu    sync.Mutex
+	cache map[string]ghCacheEntry
+	group singleflight.Group
+	now   func() time.Time
+}
+
+type ghCacheEntry struct {
+	body    []byte
+	err     error
+	expires time.Time
 }
 
 func (g *PublicGitHub) client() *http.Client {
 	if g.HTTP != nil {
 		return g.HTTP
 	}
-	return &http.Client{Timeout: 20 * time.Second}
+	return &http.Client{Timeout: 15 * time.Second}
+}
+
+func (g *PublicGitHub) clock() time.Time {
+	if g.now != nil {
+		return g.now()
+	}
+	return time.Now()
+}
+
+func (g *PublicGitHub) ttl() time.Duration {
+	if g.CacheTTL == 0 {
+		return DefaultGitHubCacheTTL
+	}
+	return g.CacheTTL
 }
 
 func (g *PublicGitHub) get(ctx context.Context, path string, out any) error {
-	c := &caller{http: g.client()}
-	req := func(ctx context.Context) error {
-		r, err := http.NewRequestWithContext(ctx, http.MethodGet, g.APIURL+path, nil)
-		if err != nil {
-			return err
-		}
-		r.Header.Set("Accept", "application/vnd.github+json")
-		if g.Token != "" {
-			r.Header.Set("Authorization", "Bearer "+g.Token)
-		}
-		return c.send(r, out)
+	raw, err := g.getRaw(ctx, path)
+	if err != nil {
+		return err
 	}
-	return req(ctx)
+	if out == nil || len(bytes.TrimSpace(raw)) == 0 {
+		return nil
+	}
+	return json.Unmarshal(raw, out)
+}
+
+// getRaw returns the response body for path, from the cache when fresh.
+func (g *PublicGitHub) getRaw(ctx context.Context, path string) ([]byte, error) {
+	useCache := g.ttl() > 0
+	if useCache && !fresh(ctx) {
+		g.mu.Lock()
+		e, ok := g.cache[path]
+		g.mu.Unlock()
+		if ok && g.clock().Before(e.expires) {
+			return e.body, e.err
+		}
+	}
+	v, err, _ := g.group.Do(path, func() (any, error) {
+		body, err := g.fetch(ctx, path)
+		// Cache successes and "not found" (a mistyped repo URL); never
+		// transient failures or rate limits.
+		if useCache && (err == nil || errors.Is(err, openchoreo.ErrNotFound)) {
+			g.mu.Lock()
+			if g.cache == nil {
+				g.cache = map[string]ghCacheEntry{}
+			}
+			now := g.clock()
+			for k, e := range g.cache {
+				if !now.Before(e.expires) {
+					delete(g.cache, k)
+				}
+			}
+			g.cache[path] = ghCacheEntry{body: body, err: err, expires: now.Add(g.ttl())}
+			g.mu.Unlock()
+		}
+		return body, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return v.([]byte), nil
+}
+
+func (g *PublicGitHub) fetch(ctx context.Context, path string) ([]byte, error) {
+	r, err := http.NewRequestWithContext(ctx, http.MethodGet, g.APIURL+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	r.Header.Set("Accept", "application/vnd.github+json")
+	if g.Token != "" {
+		r.Header.Set("Authorization", "Bearer "+g.Token)
+	}
+	resp, err := g.client().Do(r)
+	if err != nil {
+		return nil, fmt.Errorf("GitHub API: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return raw, nil
+	}
+	if rl := rateLimitOf(resp, raw); rl != nil {
+		return nil, rl
+	}
+	return nil, openchoreo.NewAPIError(resp.StatusCode, raw)
+}
+
+// rateLimitOf recognises GitHub's primary (403/429 + X-RateLimit-Remaining: 0)
+// and secondary (403/429 + "rate limit" message or Retry-After) rate limits.
+func rateLimitOf(resp *http.Response, body []byte) *RateLimitError {
+	if resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusTooManyRequests {
+		return nil
+	}
+	h := resp.Header
+	limited := h.Get("X-RateLimit-Remaining") == "0" || h.Get("Retry-After") != "" ||
+		resp.StatusCode == http.StatusTooManyRequests || strings.Contains(strings.ToLower(string(body)), "rate limit")
+	if !limited {
+		return nil
+	}
+	e := &RateLimitError{}
+	if s, err := strconv.ParseInt(h.Get("X-RateLimit-Reset"), 10, 64); err == nil && s > 0 {
+		e.Reset = time.Unix(s, 0)
+	} else if s, err := strconv.Atoi(h.Get("Retry-After")); err == nil && s > 0 {
+		e.Reset = time.Now().Add(time.Duration(s) * time.Second)
+	}
+	return e
 }
 
 // GitHubAppEnabled implements GitProvider.

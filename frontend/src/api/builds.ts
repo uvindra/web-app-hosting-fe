@@ -32,6 +32,7 @@ export async function fetchLatestCommit(track: TrackRef): Promise<LatestCommit> 
   return webAppHostingClient.get<LatestCommit>(`${trackPath(track)}/latest-commit`);
 }
 
-export async function triggerBuild(track: TrackRef, commit: LatestCommit): Promise<BuildRun> {
-  return webAppHostingClient.post<BuildRun>(`${trackPath(track)}/builds`, { sha: commit.sha });
+/** Builds `commit`, or the branch head when the latest commit couldn't be loaded. */
+export async function triggerBuild(track: TrackRef, commit: LatestCommit | undefined): Promise<BuildRun> {
+  return webAppHostingClient.post<BuildRun>(`${trackPath(track)}/builds`, commit ? { sha: commit.sha } : {});
 }
