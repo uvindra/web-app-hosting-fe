@@ -15,6 +15,7 @@ export async function fetchMetrics(track: TrackRef, environment: EnvironmentId, 
   const raw = await webAppHostingClient.get<RawMetrics>(`${envPath(track, environment)}/metrics?${new URLSearchParams({ range })}`);
   return {
     httpAvailable: raw.httpAvailable,
+    replicas: raw.replicas,
     requestRows: label(raw.requestRows),
     latencyRows: label(raw.latencyRows),
     errorRows: label(raw.errorRows),

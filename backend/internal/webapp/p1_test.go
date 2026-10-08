@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wso2/web-app-hosting/backend/internal/openchoreo/gen"
 	"github.com/wso2/web-app-hosting/backend/internal/platform"
 	"github.com/wso2/web-app-hosting/backend/internal/platformres"
 )
@@ -354,7 +355,8 @@ func TestBuildMetrics(t *testing.T) {
 		"cpuUsage": s(0.01234, 0.02), "cpuRequests": s(0.2, 0.2), "cpuLimits": s(0.2, 0.2),
 		"memoryUsage": s(4*mib, 5*mib), "memoryRequests": s(700*mib, 700*mib), "memoryLimits": s(2048*mib, 2048*mib),
 	}
-	m := BuildMetrics(res, map[string][]platform.MetricSample{})
+	alloc := Allocation{Replicas: 2, CPURequest: 0.1, CPULimit: 0.1, MemoryRequestMB: 350, MemoryLimitMB: 1024}
+	m := BuildMetrics(res, map[string][]platform.MetricSample{}, alloc)
 	if m.HTTPAvailable || len(m.RequestRows) != 0 || len(m.ErrorRows) != 0 {
 		t.Fatalf("no HTTP data: %+v", m)
 	}
@@ -368,12 +370,102 @@ func TestBuildMetrics(t *testing.T) {
 		"requestCount": s(10, 0), "successfulRequestCount": s(9, 0), "unsuccessfulRequestCount": s(1, 0),
 		"latencyP50": s(0.012, 0), "latencyP90": s(0.05, 0), "latencyP99": s(0.1234, 0),
 	}
-	m = BuildMetrics(res, http)
+	m = BuildMetrics(res, http, alloc)
 	if !m.HTTPAvailable || m.ErrorRows[0]["errorRate"] != 10.0 || m.ErrorRows[1]["errorRate"] != 0.0 {
 		t.Fatalf("error rows = %v", m.ErrorRows)
 	}
 	if m.LatencyRows[0]["p99"] != 123.4 || m.RequestRows[0]["success"] != 9.0 {
 		t.Fatalf("latency %v requests %v", m.LatencyRows, m.RequestRows)
+	}
+}
+
+// TestMetricsRollout: during a rolling restart the old and new pod coexist, so
+// the Observer's request/limit sums double for a moment. The chart's request
+// and limit stay at per-replica × desired replicas; usage is still the sum.
+func TestMetricsRollout(t *testing.T) {
+	e := newTestEnv(t)
+	e.addTrack("site", "site", "main", true)
+	e.deployOldRelease("run-a", "img-a")
+	t0 := time.Date(2026, 10, 8, 10, 0, 0, 0, time.UTC)
+	s := func(vs ...float64) []platform.MetricSample {
+		out := []platform.MetricSample{}
+		for i, v := range vs {
+			out = append(out, platform.MetricSample{Time: t0.Add(time.Duration(i) * time.Minute), Value: v})
+		}
+		return out
+	}
+	// Minute 1: two pods (old + new) — sums double; usage of both pods adds up.
+	e.logs.metrics = map[string]map[string][]platform.MetricSample{"resource": {
+		"cpuUsage": s(0.02, 0.05, 0.03), "cpuRequests": s(0.1, 0.2, 0.1), "cpuLimits": s(0.1, 0.2, 0.1),
+		"memoryUsage": s(40*mib, 90*mib, 45*mib), "memoryRequests": s(350*mib, 700*mib, 350*mib), "memoryLimits": s(1024*mib, 2048*mib, 1024*mib),
+	}}
+	m, err := e.svc.Metrics(e.ctx, "site", "site", "development", "30m")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Replicas != 1 || len(m.CPURows) != 3 || len(m.MemoryRows) != 3 {
+		t.Fatalf("metrics = %+v", m)
+	}
+	for i, r := range m.CPURows {
+		if r["limit"] != 0.1 || r["request"] != 0.1 {
+			t.Errorf("cpu row %d = %v, want request/limit 0.1", i, r)
+		}
+	}
+	for i, r := range m.MemoryRows {
+		if r["limit"] != 1024.0 || r["request"] != 350.0 {
+			t.Errorf("memory row %d = %v, want request 350 / limit 1024", i, r)
+		}
+	}
+	if m.CPURows[1]["usage"] != 0.05 || m.MemoryRows[1]["usage"] != 90.0 {
+		t.Fatalf("usage must stay the sum across pods: cpu %v memory %v", m.CPURows[1], m.MemoryRows[1])
+	}
+
+	// Two fixed replicas: the allocation doubles (and stays put through a rollout).
+	e.setPlan(platform.PlanPaid)
+	if _, err := e.svc.UpdateScaling(e.ctx, "site", "site", "development", ScalingConfig{Method: ScaleNone, FixedReplicas: 2, HPA: HPASettings{MinReplicas: 1, MaxReplicas: 3}}); err != nil {
+		t.Fatal(err)
+	}
+	m, err = e.svc.Metrics(e.ctx, "site", "site", "development", "30m")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Replicas != 2 || m.CPURows[1]["limit"] != 0.2 || m.MemoryRows[1]["limit"] != 2048.0 {
+		t.Fatalf("2 replicas: replicas %d cpu %v memory %v", m.Replicas, m.CPURows[1], m.MemoryRows[1])
+	}
+
+	// HPA without a readable live HPA (the fake has no resource tree): its min replicas.
+	hpa := ScalingConfig{Method: ScaleHPA, HPA: HPASettings{MinReplicas: 3, MaxReplicas: 5, CPUUtilization: intp(60)}}
+	if _, err := e.svc.UpdateScaling(e.ctx, "site", "site", "development", hpa); err != nil {
+		t.Fatal(err)
+	}
+	if m, err = e.svc.Metrics(e.ctx, "site", "site", "development", "30m"); err != nil || m.Replicas != 3 || m.CPURows[0]["limit"] != 0.3 {
+		t.Fatalf("hpa: %+v, %v", m, err)
+	}
+}
+
+func TestDesiredReplicas(t *testing.T) {
+	node := func(kind string, obj map[string]any) gen.ResourceNode {
+		return gen.ResourceNode{Kind: kind, Object: obj}
+	}
+	tree := func(nodes ...gen.ResourceNode) *gen.K8sResourceTreeResponse {
+		return &gen.K8sResourceTreeResponse{RenderedReleases: []gen.ReleaseResourceTree{{Nodes: nodes}}}
+	}
+	deploy := node("Deployment", map[string]any{"spec": map[string]any{"replicas": 2.0}})
+	hpa := node("HorizontalPodAutoscaler", map[string]any{"status": map[string]any{"desiredReplicas": 4.0, "currentReplicas": 2.0}})
+	pod := node("Pod", map[string]any{})
+	for name, tc := range map[string]struct {
+		tree *gen.K8sResourceTreeResponse
+		want int
+	}{
+		"nil":           {nil, 0},
+		"pods only":     {tree(pod, pod), 0},
+		"deployment":    {tree(deploy, pod, pod), 2},
+		"hpa wins":      {tree(deploy, hpa, pod), 4},
+		"hpa no status": {tree(deploy, node("HorizontalPodAutoscaler", map[string]any{})), 2},
+	} {
+		if got := DesiredReplicas(tc.tree); got != tc.want {
+			t.Errorf("%s: DesiredReplicas = %d, want %d", name, got, tc.want)
+		}
 	}
 }
 

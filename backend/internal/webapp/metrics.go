@@ -9,6 +9,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/wso2/web-app-hosting/backend/internal/openchoreo/gen"
 	"github.com/wso2/web-app-hosting/backend/internal/platform"
 )
 
@@ -31,7 +32,8 @@ var rangeConfig = map[MetricsRange]struct {
 type MetricsRow map[string]any
 
 // WebAppMetrics is the Metrics page DTO (frontend WebAppMetrics). CPU and
-// memory are totals across the environment's pods.
+// memory usage are totals across the environment's pods; request and limit
+// are the environment's allocation (see Allocation).
 type WebAppMetrics struct {
 	// RequestRows: requests per second — total, success.
 	RequestRows []MetricsRow `json:"requestRows"`
@@ -43,6 +45,9 @@ type WebAppMetrics struct {
 	CPURows []MetricsRow `json:"cpuRows"`
 	// MemoryRows: MB — usage, request, limit.
 	MemoryRows []MetricsRow `json:"memoryRows"`
+	// Replicas is the desired replica count the request/limit series are
+	// computed for (per-replica value × Replicas).
+	Replicas int `json:"replicas"`
 	// HTTPAvailable is false when the platform records no HTTP metrics for
 	// the web app (the console then hides the HTTP charts).
 	HTTPAvailable bool `json:"httpAvailable"`
@@ -63,7 +68,7 @@ func (s *Service) Metrics(ctx context.Context, webAppID, trackID, env string, r 
 	if !ok {
 		return nil, errf(CodeBadRequest, "range must be one of 30m, 1h, 6h, 24h")
 	}
-	t, _, err := s.activeBinding(ctx, webAppID, trackID, env)
+	t, b, err := s.activeBinding(ctx, webAppID, trackID, env)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +79,12 @@ func (s *Service) Metrics(ctx context.Context, webAppID, trackID, env string, r 
 		Start: end.Add(-step * time.Duration(cfg.points-1)), End: end, Step: step,
 	}
 	var res, http map[string][]platform.MetricSample
+	var alloc Allocation
 	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		alloc = s.allocation(gctx, b)
+		return nil
+	})
 	g.Go(func() (err error) {
 		rq := q
 		rq.Metric = "resource"
@@ -95,20 +105,103 @@ func (s *Service) Metrics(ctx context.Context, webAppID, trackID, env string, r 
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
-	return BuildMetrics(res, http), nil
+	return BuildMetrics(res, http, alloc), nil
 }
 
-// BuildMetrics maps Observer series to the console's chart rows.
-func BuildMetrics(res, http map[string][]platform.MetricSample) *WebAppMetrics {
+// Allocation is an environment's CPU/memory request and limit per replica,
+// and the desired replica count.
+//
+// The Observer's cpuRequests/cpuLimits/memoryRequests/memoryLimits series are
+// sums over the pods that exist at each instant, so a rolling restart (old
+// and new pod side by side) briefly doubles them — the chart showed the limit
+// jumping from 0.1 to 0.2 vCPU on every redeploy. The chart instead draws the
+// configured per-replica value × the desired replicas (the capacity the
+// environment is meant to have), while usage stays the sum across pods.
+// The configured values are the current ones: earlier points in the range
+// don't reflect resource or replica changes made since.
+type Allocation struct {
+	Replicas                       int
+	CPURequest, CPULimit           float64 // vCPU per replica
+	MemoryRequestMB, MemoryLimitMB float64 // MB per replica
+}
+
+// allocation reads the binding's resources and desired replicas: the fixed
+// replica count, or with HPA on the autoscaler's current desired count (its
+// minimum when the live HPA can't be read).
+func (s *Service) allocation(ctx context.Context, b *gen.ReleaseBinding) Allocation {
+	c := readEnvConfigs(b.Spec)
+	a := Allocation{
+		Replicas:   c.Replicas,
+		CPURequest: float64(ParseCPU(c.CPURequest)) / 1000, CPULimit: float64(ParseCPU(c.CPULimit)) / 1000,
+		MemoryRequestMB: float64(ParseMemory(c.MemRequest)) / mib, MemoryLimitMB: float64(ParseMemory(c.MemLimit)) / mib,
+	}
+	if enabled, h := hpaConfig(b.Spec); enabled {
+		a.Replicas = h.MinReplicas
+		tctx, cancel := context.WithTimeout(ctx, usageTimeout)
+		defer cancel()
+		tree, err := s.oc.ResourceTree(tctx, ns(ctx), b.Metadata.Name)
+		if err != nil {
+			slog.DebugContext(ctx, "resource tree lookup failed; using HPA min replicas", "binding", b.Metadata.Name, "error", err)
+		} else if n := DesiredReplicas(tree); n > 0 {
+			a.Replicas = n
+		}
+	}
+	if a.Replicas < 1 {
+		a.Replicas = 1
+	}
+	return a
+}
+
+// DesiredReplicas reads the replica count the platform is converging on from
+// a binding's resource tree: the HPA's status.desiredReplicas, else the
+// Deployment's spec.replicas (which the HPA sets). 0 when neither is present.
+func DesiredReplicas(tree *gen.K8sResourceTreeResponse) int {
+	if tree == nil {
+		return 0
+	}
+	hpa, deploy := 0, 0
+	for _, rel := range tree.RenderedReleases {
+		for _, n := range rel.Nodes {
+			switch n.Kind {
+			case "HorizontalPodAutoscaler":
+				st, _ := n.Object["status"].(map[string]any)
+				if v := intOf(st["desiredReplicas"]); v > 0 {
+					hpa = v
+				}
+			case "Deployment":
+				sp, _ := n.Object["spec"].(map[string]any)
+				if v := intOf(sp["replicas"]); v > 0 {
+					deploy = v
+				}
+			}
+		}
+	}
+	if hpa > 0 {
+		return hpa
+	}
+	return deploy
+}
+
+// BuildMetrics maps Observer series to the console's chart rows. CPU and
+// memory request/limit come from alloc, not the Observer (see Allocation).
+func BuildMetrics(res, http map[string][]platform.MetricSample, alloc Allocation) *WebAppMetrics {
 	ident := func(v float64) float64 { return v }
 	toMB := func(v float64) float64 { return v / mib }
 	toMs := func(v float64) float64 { return v * 1000 }
 	out := &WebAppMetrics{
-		CPURows: rows(res, map[string]string{"usage": "cpuUsage", "request": "cpuRequests", "limit": "cpuLimits"}, ident, 4),
-		MemoryRows: rows(res, map[string]string{"usage": "memoryUsage", "request": "memoryRequests", "limit": "memoryLimits"}, toMB, 2),
+		CPURows:     rows(res, map[string]string{"usage": "cpuUsage", "request": "cpuRequests", "limit": "cpuLimits"}, ident, 4),
+		MemoryRows:  rows(res, map[string]string{"usage": "memoryUsage", "request": "memoryRequests", "limit": "memoryLimits"}, toMB, 2),
 		RequestRows: rows(http, map[string]string{"total": "requestCount", "success": "successfulRequestCount"}, ident, 3),
 		LatencyRows: rows(http, map[string]string{"p50": "latencyP50", "p90": "latencyP90", "p99": "latencyP99"}, toMs, 1),
 		ErrorRows:   []MetricsRow{},
+		Replicas:    alloc.Replicas,
+	}
+	replicas := float64(alloc.Replicas)
+	for _, r := range out.CPURows {
+		r["request"], r["limit"] = round(alloc.CPURequest*replicas, 4), round(alloc.CPULimit*replicas, 4)
+	}
+	for _, r := range out.MemoryRows {
+		r["request"], r["limit"] = round(alloc.MemoryRequestMB*replicas, 2), round(alloc.MemoryLimitMB*replicas, 2)
 	}
 	out.HTTPAvailable = len(http["requestCount"]) > 0
 	failed := byTime(http["unsuccessfulRequestCount"])

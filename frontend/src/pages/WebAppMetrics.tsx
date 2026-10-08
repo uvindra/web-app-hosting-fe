@@ -9,6 +9,7 @@ import { useMetrics } from '../hooks/useMetrics';
 import type { MetricsRange } from '../types/metrics';
 import type { EnvironmentId } from '../types/webApp';
 import { trackKey, type TrackRef } from '../types/track';
+import { allocationSeriesName } from '../utils/metrics';
 
 const REQUEST_SERIES: MetricSeries[] = [
   { key: 'total', name: 'Total requests', color: 'primary' },
@@ -20,15 +21,12 @@ const LATENCY_SERIES: MetricSeries[] = [
   { key: 'p99', name: 'p99', color: 'error' },
 ];
 const ERROR_SERIES: MetricSeries[] = [{ key: 'errorRate', name: 'Failed requests', color: 'error' }];
-const CPU_SERIES: MetricSeries[] = [
-  { key: 'usage', name: 'CPU usage', color: 'primary' },
-  { key: 'request', name: 'CPU request', color: 'info', dashed: true },
-  { key: 'limit', name: 'CPU limit', color: 'error', dashed: true },
-];
-const MEMORY_SERIES: MetricSeries[] = [
-  { key: 'usage', name: 'Memory usage', color: 'primary' },
-  { key: 'request', name: 'Memory request', color: 'info', dashed: true },
-  { key: 'limit', name: 'Memory limit', color: 'error', dashed: true },
+// Usage is the sum across the pods running at each point; request/limit are the per-replica setting × the
+// desired replicas (from the BFF), so they don't spike while a rolling restart briefly runs an extra pod.
+const resourceSeries = (resource: 'CPU' | 'Memory', replicas: number | undefined): MetricSeries[] => [
+  { key: 'usage', name: `${resource} usage`, color: 'primary' },
+  { key: 'request', name: allocationSeriesName(`${resource} request`, replicas), color: 'info', dashed: true },
+  { key: 'limit', name: allocationSeriesName(`${resource} limit`, replicas), color: 'error', dashed: true },
 ];
 
 function MetricsBody({ track, environment }: { track: TrackRef; environment: EnvironmentId }): JSX.Element {
@@ -41,6 +39,7 @@ function MetricsBody({ track, environment }: { track: TrackRef; environment: Env
   const shared = { isLoading: metrics.isLoading, isError: metrics.isError, onRetry: refresh };
   // Hide the HTTP charts only once we know the platform has no HTTP metrics for this web app.
   const showHttp = metrics.data?.httpAvailable !== false;
+  const replicas = metrics.data?.replicas;
 
   return (
     <>
@@ -54,8 +53,8 @@ function MetricsBody({ track, environment }: { track: TrackRef; environment: Env
         {showHttp && <MetricGraph title="Request Rate" unit="requests/s" rows={metrics.data?.requestRows} series={REQUEST_SERIES} {...shared} />}
         {showHttp && <MetricGraph title="Latency" unit="ms" rows={metrics.data?.latencyRows} series={LATENCY_SERIES} {...shared} />}
         {showHttp && <MetricGraph title="Error Rate" unit="% of requests" rows={metrics.data?.errorRows} series={ERROR_SERIES} {...shared} />}
-        <MetricGraph title="CPU Usage" unit="vCPU (all replicas)" rows={metrics.data?.cpuRows} series={CPU_SERIES} {...shared} />
-        <MetricGraph title="Memory Usage" unit="MB (all replicas)" rows={metrics.data?.memoryRows} series={MEMORY_SERIES} {...shared} />
+        <MetricGraph title="CPU Usage" unit="vCPU (all replicas)" rows={metrics.data?.cpuRows} series={resourceSeries('CPU', replicas)} {...shared} />
+        <MetricGraph title="Memory Usage" unit="MB (all replicas)" rows={metrics.data?.memoryRows} series={resourceSeries('Memory', replicas)} {...shared} />
       </Box>
     </>
   );

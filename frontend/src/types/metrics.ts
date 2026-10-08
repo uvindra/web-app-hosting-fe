@@ -25,10 +25,15 @@ export interface WebAppMetrics {
   latencyRows: MetricsDatum[];
   /** percent of requests that failed: errorRate */
   errorRows: MetricsDatum[];
-  /** vCPU: usage, request, limit — totals across the environment's pods */
+  /** vCPU: usage (sum across the environment's pods), request and limit (per-replica setting × `replicas`) */
   cpuRows: MetricsDatum[];
-  /** MB: usage, request, limit — totals across the environment's pods */
+  /** MB: usage (sum across the environment's pods), request and limit (per-replica setting × `replicas`) */
   memoryRows: MetricsDatum[];
+  /**
+   * Desired replica count behind request/limit: the fixed replicas, or the autoscaler's current desired count.
+   * Not the pods that happen to exist, so a rolling restart doesn't double the lines.
+   */
+  replicas: number;
   /** False when the platform records no HTTP metrics for the web app: the HTTP charts are hidden. */
   httpAvailable: boolean;
 }

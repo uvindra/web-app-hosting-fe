@@ -160,6 +160,15 @@ one card per pipeline environment) — no registry, no plugin indirection.
   without yielding. `vitest.config.ts` now inlines `@wso2/oxygen-ui` (and `@mui/x-*`) so component tests can render
   oxygen-ui (its ESM build imports `prismjs/components/*` without extensions, which Node rejects). Other forms with
   several controlled TextFields have the same dev-only exposure; use `MemoTextField` there if it bites.
+- **Metrics: request/limit no longer spike during rollouts (BFF + console).** The Observer's request/limit series
+  are sums over the pods existing at each instant, so a rolling restart (old + new pod) doubled the CPU/memory limit
+  line (0.1 → 0.2 vCPU, 1024 → 2048 MB). The BFF now draws request and limit as the environment's per-replica
+  setting × the desired replicas — the fixed replica count, or with HPA the live HPA's `status.desiredReplicas`
+  (else the Deployment's `spec.replicas`, else the HPA minimum) — and returns that count as `replicas`. Usage is
+  still the sum across pods (so it can briefly exceed the limit line mid-rollout, which is real). Trade-off:
+  the allocation uses the current settings, so earlier points in the range don't show resource/replica changes
+  made since. The console names the lines "CPU limit (2 replicas)" etc. (`allocationSeriesName`). Tests:
+  `TestMetricsRollout`, `TestDesiredReplicas` (BFF).
 
 ### 2026-10-08 — P1: health checks, HPA, container images, metrics, plan gating
 

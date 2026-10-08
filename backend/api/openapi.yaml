@@ -1758,8 +1758,9 @@ components:
         requestRows: {type: array, items: {$ref: "#/components/schemas/MetricsRow"}, description: "req/s: total, success"}
         latencyRows: {type: array, items: {$ref: "#/components/schemas/MetricsRow"}, description: "ms: p50, p90, p99"}
         errorRows: {type: array, items: {$ref: "#/components/schemas/MetricsRow"}, description: "% failed: errorRate"}
-        cpuRows: {type: array, items: {$ref: "#/components/schemas/MetricsRow"}, description: "vCPU: usage, request, limit (totals)"}
-        memoryRows: {type: array, items: {$ref: "#/components/schemas/MetricsRow"}, description: "MB: usage, request, limit (totals)"}
+        cpuRows: {type: array, items: {$ref: "#/components/schemas/MetricsRow"}, description: "vCPU: usage (sum across pods), request, limit (per-replica setting × replicas)"}
+        memoryRows: {type: array, items: {$ref: "#/components/schemas/MetricsRow"}, description: "MB: usage (sum across pods), request, limit (per-replica setting × replicas)"}
+        replicas: {type: integer, description: "desired replica count behind request/limit (fixed replicas, or the HPA's current desired count)"}
         httpAvailable: {type: boolean, description: "false when the platform has no HTTP metrics for the web app"}
     Usage:
       type: object
