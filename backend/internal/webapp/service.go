@@ -49,7 +49,11 @@ type Service struct {
 	// trackLocks serializes deploys per track (namespace/component -> chan
 	// struct{} of capacity 1); see lockTrack.
 	trackLocks sync.Map
-	// async tracks background follow-up work (first builds) so tests can wait.
+	// autoRuns coalesces auto-deploy passes per track (key -> run again).
+	autoMu   sync.Mutex
+	autoRuns map[string]bool
+	// async tracks background follow-up work (first builds, auto-deploy
+	// passes) so tests can wait.
 	async sync.WaitGroup
 }
 
@@ -70,7 +74,7 @@ func New(oc *openchoreo.Client, p *platform.Platform, opts Options) *Service {
 	if opts.EnvCacheTTL == 0 {
 		opts.EnvCacheTTL = 30 * time.Second
 	}
-	return &Service{oc: oc, p: p, opts: opts, envs: newTTLCache[[]Environment](opts.EnvCacheTTL)}
+	return &Service{oc: oc, p: p, opts: opts, autoRuns: map[string]bool{}, envs: newTTLCache[[]Environment](opts.EnvCacheTTL)}
 }
 
 func ns(ctx context.Context) string {

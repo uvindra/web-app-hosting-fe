@@ -26,9 +26,10 @@ const (
 
 // auto-deploy states on a WorkflowRun.
 const (
-	autoDeployPending = "pending"
-	autoDeployDone    = "done"
-	autoDeployFailed  = "failed"
+	autoDeployPending    = "pending"
+	autoDeployDone       = "done"
+	autoDeployFailed     = "failed"
+	autoDeploySuperseded = "superseded" // a newer build of the track was auto-deployed instead
 )
 
 func (s *Service) listRuns(ctx context.Context, component string) ([]gen.WorkflowRun, error) {
@@ -101,8 +102,8 @@ func toBuildRun(r gen.WorkflowRun, branch string) BuildRun {
 	return b
 }
 
-// ListBuilds lists a track's builds, newest first. It also finishes any
-// pending auto-deploy whose watcher did not (e.g. the BFF restarted).
+// ListBuilds lists a track's builds, newest first. It also finishes the
+// track's pending auto-deploys whose watcher did not (e.g. the BFF restarted).
 func (s *Service) ListBuilds(ctx context.Context, webAppID, trackID string) ([]BuildRun, error) {
 	var (
 		t    *track
@@ -115,12 +116,14 @@ func (s *Service) ListBuilds(ctx context.Context, webAppID, trackID string) ([]B
 		return nil, err
 	}
 	out := make([]BuildRun, 0, len(runs))
+	settle := false
 	for _, r := range runs {
 		b := toBuildRun(r, t.Branch)
 		out = append(out, b)
-		if annotation(r.Metadata, AnnAutoDeployState) == autoDeployPending && b.Status != BuildInProgress {
-			s.finishAutoDeploy(auth.Detached(ctx), *t, r.Metadata.Name)
-		}
+		settle = settle || (annotation(r.Metadata, AnnAutoDeployState) == autoDeployPending && b.Status != BuildInProgress)
+	}
+	if settle {
+		s.requestAutoDeploy(auth.Detached(ctx), *t)
 	}
 	return out, nil
 }
@@ -332,8 +335,8 @@ func runNameFor(component string) string {
 	return fmt.Sprintf("%s-%s-%s", base, time.Now().UTC().Format("060102150405"), hex.EncodeToString(r[:]))
 }
 
-// watchRun polls a run until it finishes and then auto-deploys it to the
-// pipeline's first environment (B7: OC autoDeploy is not used, see MEMORY).
+// watchRun polls a run until it finishes and then settles the track's
+// auto-deploys (B7: OC autoDeploy is not used, see MEMORY).
 func (s *Service) watchRun(ctx context.Context, t track, runName string) {
 	if _, loaded := s.watches.LoadOrStore(runName, struct{}{}); loaded {
 		return
@@ -351,7 +354,7 @@ func (s *Service) watchRun(ctx context.Context, t track, runName string) {
 				continue
 			}
 			if RunStatus(*r) != BuildInProgress {
-				s.finishAutoDeploy(ctx, t, runName)
+				s.requestAutoDeploy(ctx, t)
 				return
 			}
 		}
@@ -359,36 +362,105 @@ func (s *Service) watchRun(ctx context.Context, t track, runName string) {
 	}()
 }
 
-// finishAutoDeploy deploys a finished, pending run to the first environment
-// and records the outcome on the run. Idempotent and safe to call twice.
-func (s *Service) finishAutoDeploy(ctx context.Context, t track, runName string) {
-	key := "finish/" + runName
-	if _, loaded := s.watches.LoadOrStore(key, struct{}{}); loaded {
+// requestAutoDeploy settles a track's finished, pending auto-deploys in the
+// background. Requests for the same track are coalesced: while one pass runs,
+// further requests (watchers, concurrent ListBuilds) only schedule one more
+// pass, so a track never has two auto-deploy passes in flight.
+func (s *Service) requestAutoDeploy(ctx context.Context, t track) {
+	key := ns(ctx) + "/" + t.Name
+	s.autoMu.Lock()
+	if _, running := s.autoRuns[key]; running {
+		s.autoRuns[key] = true // run again when the current pass ends
+		s.autoMu.Unlock()
 		return
 	}
+	s.autoRuns[key] = false
+	s.autoMu.Unlock()
+	s.async.Add(1)
 	go func() {
-		defer s.watches.Delete(key)
-		r, err := s.oc.GetWorkflowRun(ctx, ns(ctx), runName)
-		if err != nil || annotation(r.Metadata, AnnAutoDeployState) != autoDeployPending {
+		defer s.async.Done()
+		for {
+			s.settleAutoDeploys(ctx, t)
+			s.autoMu.Lock()
+			if s.autoRuns[key] {
+				s.autoRuns[key] = false
+				s.autoMu.Unlock()
+				continue
+			}
+			delete(s.autoRuns, key)
+			s.autoMu.Unlock()
 			return
 		}
-		state := autoDeployDone
-		if RunStatus(*r) == BuildSuccess {
-			envs, err := s.pipelineEnvironments(ctx, t.Project)
-			if err == nil && len(envs) > 0 {
-				_, err = s.deployRun(ctx, t, envs[0].ID, runName)
-			}
-			if err != nil {
-				slog.Error("auto-deploy failed", "run", runName, "error", err)
-				state = autoDeployFailed
-			} else {
-				slog.Info("auto-deployed build", "run", runName, "track", t.Name)
-			}
-		}
-		if err := s.oc.MutateWorkflowRun(ctx, ns(ctx), runName, func(w *gen.WorkflowRun) {
-			setAnnotation(&w.Metadata, AnnAutoDeployState, state)
-		}); err != nil {
-			slog.Warn("could not record auto-deploy state", "run", runName, "error", err)
-		}
 	}()
+}
+
+// settleAutoDeploys deploys the track's newest finished, successful pending
+// build to the first environment and settles every other finished pending
+// build (failed → done, older successful → superseded), under the track's
+// deploy lock so it cannot interleave with another deploy.
+func (s *Service) settleAutoDeploys(ctx context.Context, t track) {
+	unlock, err := s.lockTrack(ctx, t.Name)
+	if err != nil {
+		return
+	}
+	defer unlock()
+	runs, err := s.listRuns(ctx, t.Name)
+	if err != nil {
+		slog.Warn("auto-deploy: could not list builds", "track", t.Name, "error", err)
+		return
+	}
+	deploy, settle := planAutoDeploy(runs)
+	for name, state := range settle {
+		s.setAutoDeployState(ctx, name, state)
+	}
+	if deploy == "" {
+		return
+	}
+	state := autoDeployDone
+	envs, err := s.pipelineEnvironments(ctx, t.Project)
+	if err == nil && len(envs) == 0 {
+		err = fmt.Errorf("project %q has no environments", t.Project)
+	}
+	if err == nil {
+		_, err = s.deployRunLocked(ctx, t, envs[0].ID, deploy)
+	}
+	if err != nil {
+		slog.Error("auto-deploy failed", "run", deploy, "error", err)
+		state = autoDeployFailed
+	} else {
+		slog.Info("auto-deployed build", "run", deploy, "track", t.Name)
+	}
+	s.setAutoDeployState(ctx, deploy, state)
+}
+
+// planAutoDeploy picks, from a track's runs (newest first), the one finished
+// pending build to auto-deploy — the newest successful one, unless an even
+// newer build was already auto-deployed — and the final state of every other
+// finished pending build. In-progress builds are left pending.
+func planAutoDeploy(runs []gen.WorkflowRun) (deploy string, settle map[string]string) {
+	settle = map[string]string{}
+	newerDeployed := false
+	for _, r := range runs {
+		state, status := annotation(r.Metadata, AnnAutoDeployState), RunStatus(r)
+		switch {
+		case state == autoDeployDone && status == BuildSuccess:
+			newerDeployed = newerDeployed || deploy == ""
+		case state != autoDeployPending || status == BuildInProgress:
+		case status != BuildSuccess:
+			settle[r.Metadata.Name] = autoDeployDone
+		case deploy == "" && !newerDeployed:
+			deploy = r.Metadata.Name
+		default:
+			settle[r.Metadata.Name] = autoDeploySuperseded
+		}
+	}
+	return deploy, settle
+}
+
+func (s *Service) setAutoDeployState(ctx context.Context, runName, state string) {
+	if err := s.oc.MutateWorkflowRun(ctx, ns(ctx), runName, func(w *gen.WorkflowRun) {
+		setAnnotation(&w.Metadata, AnnAutoDeployState, state)
+	}); err != nil {
+		slog.Warn("could not record auto-deploy state", "run", runName, "error", err)
+	}
 }

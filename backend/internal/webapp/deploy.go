@@ -213,6 +213,11 @@ func (s *Service) deployRun(ctx context.Context, t track, env, runName string) (
 		return nil, err
 	}
 	defer unlock()
+	return s.deployRunLocked(ctx, t, env, runName)
+}
+
+// deployRunLocked is deployRun for a caller already holding lockTrack.
+func (s *Service) deployRunLocked(ctx context.Context, t track, env, runName string) (*Deployment, error) {
 	rel, run, err := s.ensureRelease(ctx, t, runName)
 	if err != nil {
 		return nil, err

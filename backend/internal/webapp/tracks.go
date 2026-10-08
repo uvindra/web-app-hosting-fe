@@ -296,7 +296,8 @@ func (s *Service) firstBuild(ctx context.Context, webAppID, trackID string) {
 	}()
 }
 
-// WaitBackground blocks until background follow-up work (first builds) is done (tests).
+// WaitBackground blocks until background follow-up work (first builds,
+// auto-deploy passes) is done (tests).
 func (s *Service) WaitBackground() { s.async.Wait() }
 
 func withBranch(params map[string]any, branch string) map[string]any {
