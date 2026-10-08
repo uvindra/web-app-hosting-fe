@@ -1670,10 +1670,10 @@ components:
         ready: {type: string}
         restarts: {type: integer}
         startedAt: {type: string}
-        cpuUsageMillicores: {type: integer, description: "Absent until usage metrics are available (P1)."}
+        cpuUsageMillicores: {type: integer, description: "Optional; the BFF leaves it absent (usage is reported as totals — see …/usage)."}
         cpuRequestMillicores: {type: integer, description: "First container's CPU request; 0 when unset."}
         cpuLimitMillicores: {type: integer, description: "First container's CPU limit; 0 when unset."}
-        memoryUsageBytes: {type: integer, description: "Absent until usage metrics are available (P1)."}
+        memoryUsageBytes: {type: integer, description: "As cpuUsageMillicores."}
         memoryRequestBytes: {type: integer, description: "First container's memory request; 0 when unset."}
         memoryLimitBytes: {type: integer, description: "First container's memory limit; 0 when unset."}
         conditions:
@@ -1813,7 +1813,7 @@ components:
         readyContainers: {type: integer}
         totalContainers: {type: integer}
         restarts: {type: integer}
-        cpuUsage: {type: number, description: "vCPU; set only when the environment runs a single pod (usage is reported as totals)."}
+        cpuUsage: {type: number, description: "vCPU; optional, the BFF leaves it absent (usage is reported as totals — see …/usage)."}
         memoryUsageMb: {type: number, description: "As cpuUsage."}
         startedAt: {type: string}
     ConfigEntry:

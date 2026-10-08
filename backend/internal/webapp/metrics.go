@@ -259,7 +259,7 @@ func round(v float64, decimals int) float64 {
 	return math.Round(v*f) / f
 }
 
-// usageTimeout bounds the usage lookup that decorates pod listings.
+// usageTimeout bounds the resource-tree lookup behind the metrics allocation.
 const usageTimeout = 3 * time.Second
 
 // Usage returns an environment's latest CPU/memory usage, totals across its
@@ -293,25 +293,4 @@ func (s *Service) latestUsage(ctx context.Context, t track, env string) (*Usage,
 		out.SampledAt = m[len(m)-1].Time.UTC().Format(time.RFC3339)
 	}
 	return out, nil
-}
-
-// fillSinglePodUsage sets a lone running pod's usage from the environment's
-// totals (the observability plane reports totals, not per-pod usage; with
-// several pods the per-pod figures stay absent).
-func (s *Service) fillSinglePodUsage(ctx context.Context, t track, env string, pods []Pod) {
-	if len(pods) != 1 || pods[0].Phase != "Running" {
-		return
-	}
-	uctx, cancel := context.WithTimeout(ctx, usageTimeout)
-	defer cancel()
-	u, err := s.latestUsage(uctx, t, env)
-	if err != nil {
-		slog.DebugContext(ctx, "usage lookup failed", "track", t.Name, "env", env, "error", err)
-		return
-	}
-	if u.CPUMillicores != nil {
-		v := int64(math.Round(*u.CPUMillicores))
-		pods[0].CPUUsageMillicores = &v
-	}
-	pods[0].MemoryUsageBytes = u.MemoryBytes
 }

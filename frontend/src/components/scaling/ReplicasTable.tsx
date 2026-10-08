@@ -2,6 +2,8 @@ import type { JSX } from 'react';
 import { Alert, Box, Button, Chip, CircularProgress, IconButton, ListingTable, Stack, Tooltip, Typography } from '@wso2/oxygen-ui';
 import { CircleCheck, Info, RefreshCw } from '@wso2/oxygen-ui-icons-react';
 import { useReplicas } from '../../hooks/useScaling';
+import { useUsage } from '../../hooks/useMetrics';
+import { withSingleReplicaUsage } from '../../utils/podMetrics';
 import { formatRelativeTime } from '../../utils/formatRelativeTime';
 import type { EnvironmentId } from '../../types/webApp';
 import type { TrackRef } from '../../types/track';
@@ -12,7 +14,9 @@ interface ReplicasTableProps {
 }
 
 export default function ReplicasTable({ track, environment }: ReplicasTableProps): JSX.Element {
-  const { data: pods, isLoading, isError, isFetching, refetch } = useReplicas(track, environment);
+  const { data: replicas, isLoading, isError, isFetching, refetch } = useReplicas(track, environment);
+  // Decoration: a lone replica shows the environment's usage totals as its own.
+  const usage = useUsage(track, environment);
 
   if (isLoading) {
     return (
@@ -22,7 +26,7 @@ export default function ReplicasTable({ track, environment }: ReplicasTableProps
     );
   }
 
-  if (isError || !pods) {
+  if (isError || !replicas) {
     return (
       <Alert
         severity="error"
@@ -36,6 +40,7 @@ export default function ReplicasTable({ track, environment }: ReplicasTableProps
     );
   }
 
+  const pods = withSingleReplicaUsage(replicas, usage.data);
   const running = pods.filter((p) => p.status === 'Running').length;
 
   return (

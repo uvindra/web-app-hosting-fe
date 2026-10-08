@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Pod } from '../types/runtime';
-import { aggregateUsage, formatAllocation, formatBytes, formatMillicores, usagePercent } from './podMetrics';
+import type { ReplicaPod } from '../types/scaling';
+import { aggregateUsage, formatAllocation, formatBytes, formatMillicores, usagePercent, withSinglePodUsage, withSingleReplicaUsage } from './podMetrics';
 
 const pod = (usage: { cpu?: number; mem?: number }, cpuLimit = 100, memLimit = 100): Pod => ({
   name: 'p',
@@ -57,5 +58,30 @@ describe('podMetrics', () => {
     // A total without a field keeps that resource without usage; no pods = nothing to show.
     expect(aggregateUsage([pod({}), pod({})], { cpuMillicores: 50 }).memory.used).toBeUndefined();
     expect(aggregateUsage([], { cpuMillicores: 50 }).cpu.used).toBeUndefined();
+  });
+});
+
+describe('single-pod usage from the environment totals', () => {
+  const totals = { cpuMillicores: 25, memoryBytes: 12.34 * 1024 ** 2 };
+  it('decorates a lone running pod', () => {
+    const [p] = withSinglePodUsage([pod({})], totals);
+    expect(p.cpuUsageMillicores).toBe(25);
+    expect(p.memoryUsageBytes).toBe(totals.memoryBytes);
+  });
+  it('leaves several, pending or undecorated pods alone', () => {
+    const two = [pod({}), pod({})];
+    expect(withSinglePodUsage(two, totals)).toBe(two);
+    const pending = [{ ...pod({}), phase: 'Pending' as const }];
+    expect(withSinglePodUsage(pending, totals)).toBe(pending);
+    const one = [pod({})];
+    expect(withSinglePodUsage(one, undefined)).toBe(one);
+  });
+  it('decorates a lone running replica in vCPU / MB', () => {
+    const replica: ReplicaPod = { name: 'r', status: 'Running', readyContainers: 1, totalContainers: 1, restarts: 0, startedAt: '' };
+    const [r] = withSingleReplicaUsage([replica], totals);
+    expect(r.cpuUsage).toBe(0.025);
+    expect(r.memoryUsageMb).toBe(12.3);
+    expect(withSingleReplicaUsage([replica, replica], totals)[0].cpuUsage).toBeUndefined();
+    expect(withSingleReplicaUsage([replica], {})[0].memoryUsageMb).toBeUndefined();
   });
 });

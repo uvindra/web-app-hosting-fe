@@ -62,9 +62,11 @@ func (s *Service) ReleaseDetails(ctx context.Context, webAppID, trackID, env str
 	return out, nil
 }
 
-// Pods lists the environment's pods from the binding's resource tree.
+// Pods lists the environment's pods from the binding's resource tree. Usage
+// is not filled in (the observability plane reports totals only); the
+// console decorates a lone pod with GET …/usage.
 func (s *Service) Pods(ctx context.Context, webAppID, trackID, env string) ([]Pod, error) {
-	t, b, err := s.activeBinding(ctx, webAppID, trackID, env)
+	_, b, err := s.activeBinding(ctx, webAppID, trackID, env)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +86,6 @@ func (s *Service) Pods(ctx context.Context, webAppID, trackID, env string) ([]Po
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt > out[j].StartedAt })
-	s.fillSinglePodUsage(ctx, *t, env, out)
 	return out, nil
 }
 

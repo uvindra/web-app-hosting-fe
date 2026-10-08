@@ -478,25 +478,6 @@ func TestDesiredReplicas(t *testing.T) {
 	}
 }
 
-// TestSinglePodUsage: a lone pod gets the environment's usage; replicas too.
-func TestSinglePodUsage(t *testing.T) {
-	e := newTestEnv(t)
-	now := time.Now()
-	e.logs.metrics = map[string]map[string][]platform.MetricSample{"resource": {
-		"cpuUsage": {{Time: now, Value: 0.0254}}, "memoryUsage": {{Time: now, Value: 12 * mib}},
-	}}
-	pods := []Pod{{Name: "p1", Phase: "Running"}}
-	e.svc.fillSinglePodUsage(e.ctx, track{Name: "site", Project: "default"}, "development", pods)
-	if pods[0].CPUUsageMillicores == nil || *pods[0].CPUUsageMillicores != 25 || pods[0].MemoryUsageBytes == nil || *pods[0].MemoryUsageBytes != 12*mib {
-		t.Fatalf("pod = %+v", pods[0])
-	}
-	two := []Pod{{Name: "p1", Phase: "Running"}, {Name: "p2", Phase: "Running"}}
-	e.svc.fillSinglePodUsage(e.ctx, track{Name: "site"}, "development", two)
-	if two[0].CPUUsageMillicores != nil {
-		t.Fatal("per-pod usage is unknown with several pods")
-	}
-}
-
 func TestBuildOfRelease(t *testing.T) {
 	for in, want := range map[string]string{"site-261008-ab": "site-261008-ab", "site-261008-ab--r3": "site-261008-ab", "site-img-261008-ab--r12": "site-img-261008-ab", "site--main-1": "site--main-1"} {
 		if got := buildOfRelease(in); got != want {

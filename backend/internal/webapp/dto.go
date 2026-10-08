@@ -190,8 +190,9 @@ type Pod struct {
 	Ready     string `json:"ready"`
 	Restarts  int    `json:"restarts"`
 	StartedAt string `json:"startedAt"`
-	// CPUUsageMillicores / MemoryUsageBytes are absent until usage metrics
-	// exist (P1); nil means "not available", never 0.
+	// CPUUsageMillicores / MemoryUsageBytes: optional per-pod usage. The
+	// observability plane reports totals only, so the BFF leaves them absent
+	// (the console uses GET …/usage); nil means "not available", never 0.
 	CPUUsageMillicores   *int64         `json:"cpuUsageMillicores,omitempty"`
 	CPURequestMillicores int64          `json:"cpuRequestMillicores"`
 	CPULimitMillicores   int64          `json:"cpuLimitMillicores"`
@@ -258,7 +259,8 @@ type ReplicaPod struct {
 	ReadyContainers int    `json:"readyContainers"`
 	TotalContainers int    `json:"totalContainers"`
 	Restarts        int    `json:"restarts"`
-	// CPUUsage / MemoryUsageMb are absent until usage metrics exist (P1).
+	// CPUUsage / MemoryUsageMb: optional per-replica usage, absent (see
+	// Pod; the console uses GET …/usage).
 	CPUUsage      *float64 `json:"cpuUsage,omitempty"`
 	MemoryUsageMb *float64 `json:"memoryUsageMb,omitempty"`
 	StartedAt     string   `json:"startedAt"`

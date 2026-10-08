@@ -1,5 +1,6 @@
 import type { Usage } from '../types/metrics';
 import type { Pod, UsageSummary } from '../types/runtime';
+import type { ReplicaPod } from '../types/scaling';
 
 /** Millicores -> "0.25 vCPU". */
 export function formatMillicores(millicores: number): string {
@@ -57,7 +58,28 @@ export function aggregateUsage(pods: Pod[], totals?: Usage): { cpu: UsageSummary
       (p) => p.memoryLimitBytes,
     ),
   };
-  const withTotal = (s: UsageSummary, used: number | undefined): UsageSummary =>
-    used === undefined || pods.length === 0 ? s : { ...s, used, percent: usagePercent(used, s.limit) };
+  const withTotal = (s: UsageSummary, used: number | undefined): UsageSummary => (used === undefined || pods.length === 0 ? s : { ...s, used, percent: usagePercent(used, s.limit) });
   return { cpu: withTotal(out.cpu, totals?.cpuMillicores), memory: withTotal(out.memory, totals?.memoryBytes) };
+}
+
+/**
+ * The environment's usage totals as the usage of its pod when it runs exactly one (running) pod — the platform
+ * reports totals, so per-pod usage is unknown with several pods. Returns the pods unchanged otherwise.
+ */
+export function withSinglePodUsage(pods: Pod[], totals?: Usage): Pod[] {
+  if (pods.length !== 1 || pods[0].phase !== 'Running' || totals === undefined) return pods;
+  return [{ ...pods[0], cpuUsageMillicores: totals.cpuMillicores, memoryUsageBytes: totals.memoryBytes }];
+}
+
+/** As withSinglePodUsage, for the Scaling page's replicas (vCPU, MB). */
+export function withSingleReplicaUsage(replicas: ReplicaPod[], totals?: Usage): ReplicaPod[] {
+  if (replicas.length !== 1 || replicas[0].status !== 'Running' || totals === undefined) return replicas;
+  const { cpuMillicores, memoryBytes } = totals;
+  return [
+    {
+      ...replicas[0],
+      cpuUsage: cpuMillicores === undefined ? undefined : cpuMillicores / 1000,
+      memoryUsageMb: memoryBytes === undefined ? undefined : Math.round((memoryBytes / 1024 ** 2) * 10) / 10,
+    },
+  ];
 }

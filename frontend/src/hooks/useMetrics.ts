@@ -14,7 +14,7 @@ export function useMetrics(track: TrackRef, environment: EnvironmentId, range: M
   });
 }
 
-/** Latest CPU/memory totals (Runtime page cards). */
+/** Latest CPU/memory totals (Runtime cards; a lone pod / replica on Runtime and Scaling). */
 export function useUsage(track: TrackRef, environment: EnvironmentId) {
   return useQuery({
     queryKey: ['usage', ...trackKey(track), environment],

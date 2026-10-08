@@ -350,16 +350,7 @@ func (s *Service) Replicas(ctx context.Context, webAppID, trackID, env string) (
 		}
 		var ready, total int
 		_, _ = fmtSscanf(p.Ready, &ready, &total)
-		rp := ReplicaPod{Name: p.Name, Status: st, ReadyContainers: ready, TotalContainers: total, Restarts: p.Restarts, StartedAt: p.StartedAt}
-		if p.CPUUsageMillicores != nil {
-			v := float64(*p.CPUUsageMillicores) / 1000
-			rp.CPUUsage = &v
-		}
-		if p.MemoryUsageBytes != nil {
-			v := round(float64(*p.MemoryUsageBytes)/mib, 1)
-			rp.MemoryUsageMb = &v
-		}
-		out = append(out, rp)
+		out = append(out, ReplicaPod{Name: p.Name, Status: st, ReadyContainers: ready, TotalContainers: total, Restarts: p.Restarts, StartedAt: p.StartedAt})
 	}
 	return out, nil
 }
