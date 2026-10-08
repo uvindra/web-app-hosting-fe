@@ -82,8 +82,9 @@ withEnvironment` renders the environment picker.
 `src/auth/` (`AuthContext.tsx`, `tokenManager.ts`, `authorizeUrl.ts`, `ProtectedRoute.tsx`) is
 ported from ipaas (OIDC+PKCE, `/signin` callback) against the Platform IdP (ThunderID; config keys
 keep the legacy `ASGARDEO_*` names). There is **no STS**, as in ICP cloud: the org comes straight
-from the JWT (`organization.handle`/`ouHandle`), falling back to `ORG_HANDLE` in `config.json`
-(local OpenChoreo tokens carry no org claims). After login the console calls the billing API
+from the JWT (`organization.handle`/`ouHandle`), unless `ORG_HANDLE` is set in `config.json` — then
+that wins (`tokenManager.resolveOrgHandle`). Only the local OpenChoreo target sets it (`default`, the
+one namespace its BFF uses); WSO2 Cloud leaves it empty. After login the console calls the billing API
 `/organization?product=web-app-hosting` (when `BILLING_API_BASE_URL` is set), which activates the
 free plan; billing UI is hidden without it.
 
@@ -129,6 +130,35 @@ one card per pipeline environment) — no registry, no plugin indirection.
   `AUTH_MODE=dev` (local only), which then uses its own client for every platform call.
 
 ## Changelog
+
+### 2026-10-08 — Minor fixes from the P0 browser walkthrough
+
+- **Project home count:** the subtitle said "N web applications deployed" for every web app. It now reads
+  "2 web applications · 1 deployed" (`utils/webAppSummary`; deployed = status other than `not-deployed`, which the BFF
+  derives from the pipeline's first environment).
+- **Track list after delete:** OpenChoreo deletes Components asynchronously, so the refetch still returned the track.
+  - BFF: track lists, web app lists/counts and track lookups skip Components with a `deletionTimestamp`.
+  - Console: `useDeleteDeploymentTrack` removes the track from the cached list before the refetch (`useCreateDeploymentTrack`
+    adds the created one). `TrackDeleteButton` awaits `mutateAsync`: per-call `mutate` callbacks don't fire once the
+    row unmounts, which would lose the success alert.
+- **Pods table clipped:** Logs/Events are now icon buttons with tooltips, pod names wrap at a smaller min width and the
+  table scrolls inside its container (Scaling's replicas table too).
+- **No fake zero usage (metrics are P1):** the BFF sent 0 for pod CPU/memory usage.
+  - `Pod.cpuUsageMillicores`/`memoryUsageBytes` and `ReplicaPod.cpuUsage`/`memoryUsageMb` are optional end to end
+    (absent = not available, for P1 to fill). `Pod` gained `cpuRequestMillicores`/`memoryRequestBytes`.
+  - Runtime cards show "Request 0.10 vCPU · Limit 0.10 vCPU" / "Request 350 MiB · Limit 1 GiB" with "Usage metrics
+    coming soon"; per-pod and per-replica usage cells show "—". `formatBytes` drops trailing zeros ("350 MiB").
+- **Org label:** locally the header and URLs showed the user's JWT `ouHandle` while the BFF uses the `default` namespace.
+  A configured `ORG_HANDLE` now wins over the JWT org (see Auth above). Older sessions: the root and post-login
+  redirects use `getSessionOrgHandle`, saved redirect paths and `ProtectedRoute` move `/organizations/<other>/…` onto
+  the configured org (`paths.withOrg`). The synthetic-`default` guard in `saveRedirectUrl` is unchanged. Tests:
+  `auth/orgHandle.test.ts`, `auth/redirectUrl.test.ts`.
+- **Docker paths:** the Build page showed the Dockerfile path and build context from the repository root, while create
+  takes them relative to the component directory. The BFF's `BuildConfig.docker` now converts the workflow's repo-root
+  paths back (`relToAppPath`), so create input and build-config output match (OpenAPI `DockerBuild` updated). The panel
+  labels them "(from component directory)", next to Component Directory.
+- **`.gitignore`:** the bare `build/` rule also ignored `src/components/build/`, so its five components were never
+  committed (a fresh clone wouldn't compile). The rule is now anchored (`/build/`, `/frontend/build/`) and the files are tracked.
 
 ### 2026-10-08 — Fixes from the P0 browser walkthrough
 
