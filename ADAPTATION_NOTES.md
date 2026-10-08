@@ -172,6 +172,8 @@ one card per pipeline environment) — no registry, no plugin indirection.
   - BFF: `CreateWebAppInput.docker {filePath, context}` (OpenAPI `DockerBuild`) feeds the dockerfile-builder's
     `docker.filePath` / `docker.context` (resolved against the component directory, rejected if outside the repo);
     `BuildConfig.docker` reports them; static build configs no longer report a Node version.
+- **Stale scale-to-zero text:** removed "Scale to zero is enabled …" from the Deploy page's environment cards
+  (`DeployEnvironmentCard`); scale-to-zero was dropped (D6, see 2026-10-06).
 
 ### 2026-10-08 — Fix post-login redirect
 

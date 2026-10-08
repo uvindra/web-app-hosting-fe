@@ -54,10 +54,6 @@ export default function DeployEnvironmentCard({ environmentName, current, histor
         </Typography>
       )}
 
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
-        Scale to zero is enabled: the app scales down when idle and starts on the first request.
-      </Typography>
-
       {error && (
         <Alert severity="error" sx={{ mt: 2 }}>
           {error}
