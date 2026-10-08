@@ -1,10 +1,11 @@
 import type { JSX } from 'react';
-import { Link } from 'react-router';
-import { Box, Chip, CircularProgress, PageContent, Stack, Typography } from '@wso2/oxygen-ui';
+import { Link, Navigate } from 'react-router';
+import { Alert, Box, Chip, CircularProgress, PageContent, Stack, Typography } from '@wso2/oxygen-ui';
 import { AppWindow, GitBranch, Github } from '@wso2/oxygen-ui-icons-react';
 import EmptyListing from '../components/EmptyListing';
 import { WEB_APP_PAGE_MAX_WIDTH } from '../components/webapp/WebAppPage';
 import { useWebAppContext } from '../hooks/useWebAppContext';
+import type { WebAppContextState } from '../hooks/useWebAppContext';
 import TrackSelect from '../components/webapp/TrackSelect';
 import { useBuilds } from '../hooks/useBuilds';
 import { useDeployments } from '../hooks/useDeployments';
@@ -72,11 +73,11 @@ function LatestBuildCard({ track, buildUrl }: { track: TrackRef; buildUrl: strin
   );
 }
 
+type ReadyContext = Extract<WebAppContextState, { status: 'ready' }>;
+
 /** Wireframe page 8 — the created web app's overview: source/commit header, latest build, per-environment deployment status. */
 export default function WebAppOverview(): JSX.Element {
   const ctx = useWebAppContext();
-  const ready = ctx.status === 'ready' ? ctx : undefined;
-  const { data: deployments, isLoading: loadingDeployments } = useDeployments(ready?.track ?? { webAppId: '', trackId: '' });
 
   if (ctx.status === 'loading') {
     return (
@@ -86,7 +87,7 @@ export default function WebAppOverview(): JSX.Element {
     );
   }
 
-  if (ctx.status === 'not-found' || !ready) {
+  if (ctx.status === 'not-found') {
     return (
       <PageContent>
         <EmptyListing icon={<AppWindow size={48} />} title="Web app not found" description="This web app doesn't exist or you don't have access to it." />
@@ -94,10 +95,27 @@ export default function WebAppOverview(): JSX.Element {
     );
   }
 
-  const { scope, webApp, track, environments } = ready;
-  const deployUrl = withTrack(webAppDeployUrl(scope.org, scope.project, scope.webApp), track.trackId === webApp.defaultTrackId ? null : track.trackId);
+  if (ctx.status === 'error') {
+    return (
+      <PageContent>
+        <Alert severity="error">{ctx.message}</Alert>
+      </PageContent>
+    );
+  }
+
+  return <OverviewContent ctx={ctx} />;
+}
+
+/** The overview once the web app and its selected track are resolved (track-scoped queries start here). */
+function OverviewContent({ ctx }: { ctx: ReadyContext }): JSX.Element {
+  const { scope, webApp, track, environments, trackRedirect } = ctx;
+  const { data: deployments, isLoading: loadingDeployments } = useDeployments(track);
+  const trackParam = track.trackId === webApp.defaultTrackId ? null : track.trackId;
+  const deployUrl = withTrack(webAppDeployUrl(scope.org, scope.project, scope.webApp), trackParam);
   return (
     <PageContent sx={{ pt: 4, maxWidth: WEB_APP_PAGE_MAX_WIDTH }}>
+      {/* A stale ?track= (or a just-deleted track): show the default track and drop the param from the URL. */}
+      {trackRedirect && <Navigate to={trackRedirect} replace />}
       <Stack direction="row" alignItems="center" gap={2} sx={{ mb: 1 }}>
         <AppWindow size={32} />
         <Typography variant="h1">{webApp.displayName}</Typography>
@@ -129,7 +147,7 @@ export default function WebAppOverview(): JSX.Element {
         )}
       </Stack>
 
-      <LatestBuildCard track={track} buildUrl={withTrack(webAppBuildUrl(scope.org, scope.project, scope.webApp), track.trackId === webApp.defaultTrackId ? null : track.trackId)} />
+      <LatestBuildCard track={track} buildUrl={withTrack(webAppBuildUrl(scope.org, scope.project, scope.webApp), trackParam)} />
 
       {loadingDeployments ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>

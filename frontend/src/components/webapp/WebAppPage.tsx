@@ -1,6 +1,7 @@
 import { useState, type JSX, type ReactNode } from 'react';
-import { Box, CircularProgress, PageContent, Stack, Typography } from '@wso2/oxygen-ui';
-import { AppWindow } from '@wso2/oxygen-ui-icons-react';
+import { Navigate } from 'react-router';
+import { Alert, Box, CircularProgress, PageContent, Stack, Typography } from '@wso2/oxygen-ui';
+import { AppWindow, Layers } from '@wso2/oxygen-ui-icons-react';
 import EmptyListing from '../EmptyListing';
 import TrackSelect from './TrackSelect';
 import EnvironmentSelect from './EnvironmentSelect';
@@ -52,11 +53,30 @@ export default function WebAppPage({ title, description, actions, withEnvironmen
     );
   }
 
-  const environment = chosenEnv && ctx.environments.some((e) => e.id === chosenEnv) ? chosenEnv : (ctx.environments[0]?.id ?? '');
+  if (ctx.status === 'error') {
+    return (
+      <PageContent>
+        <Alert severity="error">{ctx.message}</Alert>
+      </PageContent>
+    );
+  }
+
+  const firstEnvironment = ctx.environments[0];
+  if (!firstEnvironment) {
+    return (
+      <PageContent>
+        <EmptyListing icon={<Layers size={48} />} title="No environments" description="This project's deployment pipeline has no environments to build and deploy to." />
+      </PageContent>
+    );
+  }
+
+  const environment = chosenEnv && ctx.environments.some((e) => e.id === chosenEnv) ? chosenEnv : firstEnvironment.id;
   const ready: ReadyWebAppContext = { ...ctx, environment, environmentName: environmentLabel(ctx.environments, environment) };
 
   return (
     <PageContent sx={{ pt: 4, maxWidth }}>
+      {/* A stale ?track= (or a just-deleted track): the page shows the default track; drop the param from the URL. */}
+      {ctx.trackRedirect && <Navigate to={ctx.trackRedirect} replace />}
       <Stack direction="row" alignItems="flex-start" justifyContent="space-between" gap={2} sx={{ mb: 3 }}>
         <Box>
           <Typography variant="h1">{title}</Typography>

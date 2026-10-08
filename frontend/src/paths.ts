@@ -118,6 +118,14 @@ export function withTrack(url: string, trackId: string | null | undefined): stri
   return `${url}?${new URLSearchParams({ [TRACK_PARAM]: trackId }).toString()}`;
 }
 
+/** The given location without its `?track=` (i.e. on the default track), keeping other query params and the hash. */
+export function withoutTrack(location: { pathname: string; search: string; hash: string }): string {
+  const params = new URLSearchParams(location.search);
+  params.delete(TRACK_PARAM);
+  const query = params.toString();
+  return `${location.pathname}${query ? `?${query}` : ''}${location.hash}`;
+}
+
 // ---------------------------------------------------------------------------
 // External links
 // ---------------------------------------------------------------------------

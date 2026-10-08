@@ -1,14 +1,14 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchWebApps, fetchWebApp, createWebApp } from '../api/webApps';
 import type { CreateWebAppInput } from '../types/webApp';
 import type { Sample } from '../types/sample';
 import { createFromSample } from '../utils/sampleInput';
 
-export function useWebApps(projectId: string) {
+/** A project's web apps (`undefined`: the project isn't known yet, nothing is fetched). */
+export function useWebApps(projectId: string | undefined) {
   return useQuery({
     queryKey: ['webApps', projectId],
-    queryFn: () => fetchWebApps(projectId),
-    enabled: !!projectId,
+    queryFn: projectId ? () => fetchWebApps(projectId) : skipToken,
   });
 }
 
@@ -20,7 +20,7 @@ export function useWebApp(projectId: string, webAppId: string) {
   });
 }
 
-export function useWebAppByHandler(projectId: string, handler: string) {
+export function useWebAppByHandler(projectId: string | undefined, handler: string) {
   const { data: webApps = [], isLoading } = useWebApps(projectId);
   const data = handler ? (webApps.find((a) => a.handler === handler) ?? undefined) : undefined;
   return { data, isLoading: !data && isLoading && !!handler };

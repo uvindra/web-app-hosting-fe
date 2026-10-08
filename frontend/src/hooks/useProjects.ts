@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchProjects, fetchProject, createProject, fetchProjectEnvironments } from '../api/projects';
 import type { CreateProjectInput } from '../types/project';
 
@@ -33,11 +33,11 @@ export function useCreateProject() {
 }
 
 /** The project's deployment-pipeline environments, in promotion order. */
-export function useProjectEnvironments(projectId: string) {
+/** A project's pipeline environments (`undefined`: the project isn't known yet, nothing is fetched). */
+export function useProjectEnvironments(projectId: string | undefined) {
   return useQuery({
     queryKey: ['projectEnvironments', projectId],
-    queryFn: () => fetchProjectEnvironments(projectId),
-    enabled: !!projectId,
+    queryFn: projectId ? () => fetchProjectEnvironments(projectId) : skipToken,
     staleTime: 5 * 60 * 1000,
   });
 }
