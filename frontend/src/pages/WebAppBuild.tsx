@@ -17,7 +17,7 @@ function BuildContent({ track }: { track: TrackRef }): JSX.Element {
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const selectedRun = runs.data?.find((r) => r.id === selectedId);
   // Step logs load on demand for the open build (live while it runs, archived afterwards).
-  const logs = useBuildLogs(track, selectedId, selectedRun?.status === 'in-progress');
+  const logs = useBuildLogs(track, selectedRun);
 
   // The latest commit (read from GitHub) degrades inside its own card; it doesn't block the page.
   if (config.isLoading || runs.isLoading) {
