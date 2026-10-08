@@ -431,7 +431,7 @@ func TestCreateDockerWebAppUsesDockerFields(t *testing.T) {
 	pas.svc.WaitBackground()
 	code, cfg, _ := call(t, srv, "GET", "/webapps/api/tracks/api/build-config", nil)
 	d, _ := cfg["docker"].(map[string]any)
-	if code != 200 || d["filePath"] != "svc/deploy/Dockerfile" || d["context"] != "." || cfg["port"] != float64(9000) {
+	if code != 200 || d["filePath"] != "deploy/Dockerfile" || d["context"] != ".." || cfg["componentDirectory"] != "/svc" || cfg["port"] != float64(9000) {
 		t.Fatalf("build-config: %d %v", code, cfg)
 	}
 	in["handler"], in["docker"] = "api2", map[string]any{"filePath": "../../Dockerfile"}

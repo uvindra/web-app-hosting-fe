@@ -101,6 +101,33 @@ func underAppPath(app, rel, def string) (string, error) {
 	return p, nil
 }
 
+// relToAppPath is the inverse of underAppPath: it turns a repository-relative
+// path p back into one relative to the component directory app ("." for app
+// itself, ".." segments for paths above it).
+func relToAppPath(app, p string) string {
+	split := func(s string) []string {
+		s = path.Clean(strings.Trim(s, "/"))
+		if s == "." || s == "" {
+			return nil
+		}
+		return strings.Split(s, "/")
+	}
+	a, b := split(app), split(p)
+	i := 0
+	for i < len(a) && i < len(b) && a[i] == b[i] {
+		i++
+	}
+	parts := make([]string, 0, len(a)-i+len(b)-i)
+	for range a[i:] {
+		parts = append(parts, "..")
+	}
+	parts = append(parts, b[i:]...)
+	if len(parts) == 0 {
+		return "."
+	}
+	return strings.Join(parts, "/")
+}
+
 // WorkflowFor maps a preset to its workflow + parameters (PLAN_P0 "Preset → workflow").
 func WorkflowFor(b BuildSpec) (Workflow, error) {
 	if !b.Preset.Valid() {

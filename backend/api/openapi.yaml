@@ -1295,9 +1295,9 @@ components:
     DockerBuild:
       type: object
       description: |
-        Dockerfile build (preset docker). On create both paths are relative to
-        componentDirectory (defaults: `Dockerfile`, and the component directory
-        itself); BuildConfig reports them from the repository root.
+        Dockerfile build (preset docker). Both paths are relative to
+        componentDirectory, on create and in BuildConfig alike (defaults:
+        `Dockerfile`, and `.` = the component directory itself).
       properties:
         filePath: {type: string}
         context: {type: string}

@@ -230,9 +230,16 @@ func (s *Service) BuildConfig(ctx context.Context, webAppID, trackID string) (*B
 		}
 	}
 	if d, ok := p["docker"].(map[string]any); ok {
+		// The workflow holds repository-root paths; report them relative to
+		// the component directory, the way CreateWebAppInput.docker takes them.
+		app := NormalizeAppPath(t.AppPath)
 		cfg.Docker = &DockerBuild{}
-		cfg.Docker.FilePath, _ = d["filePath"].(string)
-		cfg.Docker.Context, _ = d["context"].(string)
+		if f, _ := d["filePath"].(string); f != "" {
+			cfg.Docker.FilePath = relToAppPath(app, f)
+		}
+		if c, _ := d["context"].(string); c != "" {
+			cfg.Docker.Context = relToAppPath(app, c)
+		}
 	}
 	if env, ok := p["buildEnv"].([]any); ok {
 		for _, e := range env {

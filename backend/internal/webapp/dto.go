@@ -68,10 +68,10 @@ type CreateWebAppInput struct {
 	Docker *DockerBuild `json:"docker,omitempty"`
 }
 
-// DockerBuild locates the Dockerfile and build context. On create both are
-// relative to the component directory (defaults: "Dockerfile" and the
-// component directory itself); BuildConfig reports them from the repository
-// root, as the workflow uses them.
+// DockerBuild locates the Dockerfile and build context, both relative to the
+// component directory (defaults: "Dockerfile" and "." = the component
+// directory itself), on create and in BuildConfig alike. The workflow stores
+// them from the repository root.
 type DockerBuild struct {
 	FilePath string `json:"filePath,omitempty"`
 	Context  string `json:"context,omitempty"`
@@ -118,7 +118,7 @@ type BuildConfig struct {
 	BuildPath          string `json:"buildPath"`
 	NodeVersion        string `json:"nodeVersion,omitempty"`
 	Port               int    `json:"port"`
-	// Docker is set for the docker preset (paths from the repository root).
+	// Docker is set for the docker preset (paths relative to ComponentDirectory).
 	Docker *DockerBuild `json:"docker,omitempty"`
 }
 

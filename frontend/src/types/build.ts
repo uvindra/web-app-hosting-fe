@@ -33,7 +33,7 @@ export interface BuildConfig {
   buildPath: string;
   nodeVersion?: string;
   port: number;
-  /** Docker preset: paths from the repository root. */
+  /** Docker preset: both paths relative to `componentDirectory`, as on create. */
   docker?: DockerBuild;
 }
 

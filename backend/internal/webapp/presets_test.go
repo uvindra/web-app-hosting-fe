@@ -134,3 +134,31 @@ func TestWorkflowForIgnoresUnusedFields(t *testing.T) {
 		t.Errorf("python buildEnv = %v", env)
 	}
 }
+
+func TestRelToAppPath(t *testing.T) {
+	cases := []struct{ app, p, want string }{
+		{".", "Dockerfile", "Dockerfile"},
+		{".", ".", "."},
+		{"svc", "svc/Dockerfile", "Dockerfile"},
+		{"svc", "svc", "."},
+		{"svc", ".", ".."},
+		{"svc/api", "svc/docker/Dockerfile", "../docker/Dockerfile"},
+		{"/svc/", "svc/build/Dockerfile", "build/Dockerfile"},
+	}
+	for _, c := range cases {
+		if got := relToAppPath(c.app, c.p); got != c.want {
+			t.Errorf("relToAppPath(%q, %q) = %q, want %q", c.app, c.p, got, c.want)
+		}
+	}
+	// Round trip: what create takes, BuildConfig gives back (normalized).
+	for _, in := range []struct{ app, rel, want string }{{"/svc", "deploy/Dockerfile", "deploy/Dockerfile"}, {"/svc", "..", ".."}, {"/svc", "./src/", "src"}, {"/", "Dockerfile", "Dockerfile"}} {
+		app := NormalizeAppPath(in.app)
+		p, err := underAppPath(app, in.rel, ".")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := relToAppPath(app, p); got != in.want {
+			t.Errorf("round trip %+v = %q", in, got)
+		}
+	}
+}

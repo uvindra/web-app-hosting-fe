@@ -3,6 +3,9 @@ import { Box, Typography } from '@wso2/oxygen-ui';
 import { presetKind } from '../../constants/buildPresets';
 import type { BuildConfig } from '../../types/build';
 
+const DOCKERFILE_LABEL = 'Dockerfile Path (from component directory)';
+const CONTEXT_LABEL = 'Build Context (from component directory)';
+
 /** Common fields, then only the build fields the preset uses (see `presetKind`). */
 const fields = (config: BuildConfig): Array<[string, string | undefined]> => {
   const common: Array<[string, string | undefined]> = [
@@ -18,13 +21,14 @@ const fields = (config: BuildConfig): Array<[string, string | undefined]> => {
     case 'static':
       return [...common, ['Directory to serve', config.buildPath], port];
     case 'docker':
-      return [...common, ['Dockerfile (from repository root)', config.docker?.filePath], ['Build Context (from repository root)', config.docker?.context], port];
+      // Same fields and base as the create form: relative to the component directory shown above.
+      return [...common, [DOCKERFILE_LABEL, config.docker?.filePath], [CONTEXT_LABEL, config.docker?.context], port];
     default:
       return [...common, ['Node Version', config.nodeVersion], port];
   }
 };
 
-const MONO_FIELDS = new Set(['Build Command', 'Build Path (Output Directory)', 'Directory to serve', 'Dockerfile (from repository root)', 'Build Context (from repository root)']);
+const MONO_FIELDS = new Set(['Build Command', 'Build Path (Output Directory)', 'Directory to serve', DOCKERFILE_LABEL, CONTEXT_LABEL]);
 
 /** Read-only view of the build settings captured at web-app creation. */
 export default function BuildConfigPanel({ config }: { config: BuildConfig }): JSX.Element {
