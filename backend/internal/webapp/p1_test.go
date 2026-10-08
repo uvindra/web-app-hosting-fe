@@ -3,6 +3,7 @@ package webapp
 import (
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -543,5 +544,56 @@ func TestImageDeploymentsReadEachReleaseOnce(t *testing.T) {
 	}
 	if reads != 1 {
 		t.Fatalf("release reads = %d (%v), want 1", reads, e.oc.gets)
+	}
+}
+
+// TestEnsureAttachesTraitsInBackground: the first EnsurePlatformResources
+// returns without waiting for the track Components to get the HPA trait;
+// the pass runs once per namespace and attaches it to every track.
+func TestEnsureAttachesTraitsInBackground(t *testing.T) {
+	e := newTestEnv(t)
+	e.addTrack("a", "a", "main", true)
+	e.addTrack("b", "b", "main", true)
+	release := make(chan struct{})
+	var mu sync.Mutex
+	updates := 0
+	e.oc.beforeUpdate = func(coll, _ string) {
+		if coll == "components" {
+			<-release
+			mu.Lock()
+			updates++
+			mu.Unlock()
+		}
+	}
+	done := make(chan error, 1)
+	go func() { done <- e.svc.EnsurePlatformResources(e.ctx) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("EnsurePlatformResources waited for the trait attach pass")
+	}
+	close(release)
+	e.svc.WaitBackground()
+	for _, name := range []string{"a", "b"} {
+		if !strings.Contains(toJSON(e.oc.Get("components", name)), platformres.HPATraitName) {
+			t.Errorf("component %s lacks the HPA trait", name)
+		}
+	}
+	// A second namespace-wide pass is not started (once per namespace and
+	// version): a track that lost the trait keeps lacking it until the lazy
+	// ensureTrackTrait path runs.
+	e.addTrack("a", "a", "main", true)
+	e.svc.ensured.Delete(testNS)
+	if err := e.svc.EnsurePlatformResources(e.ctx); err != nil {
+		t.Fatal(err)
+	}
+	e.svc.WaitBackground()
+	mu.Lock()
+	defer mu.Unlock()
+	if updates != 2 || strings.Contains(toJSON(e.oc.Get("components", "a")), platformres.HPATraitName) {
+		t.Fatalf("component updates = %d, want 2 (one pass)", updates)
 	}
 }

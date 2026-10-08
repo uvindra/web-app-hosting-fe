@@ -30,6 +30,8 @@ type fakeOC struct {
 	beforeGenerate func(component, release string)
 	deletes        []string // "collection/name"
 	gets           []string // single-object reads, "collection/name"
+	// beforeUpdate runs (unlocked) before a PUT of collection/name.
+	beforeUpdate func(coll, name string)
 	// stepLogs answers workflowruns/{name}/logs?task= (after logDelay);
 	// maxInFlight records the peak concurrency of those reads.
 	stepLogs              map[string][]string
@@ -141,6 +143,9 @@ func (f *fakeOC) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if len(parts) == 3 && parts[0] == "components" && parts[2] == "generate-release" && r.Method == http.MethodPost {
 		f.generate(w, parts[1], body)
 		return
+	}
+	if hook := f.beforeUpdate; hook != nil && len(parts) == 2 && r.Method == http.MethodPut {
+		hook(parts[0], parts[1])
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()

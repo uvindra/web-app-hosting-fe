@@ -44,6 +44,9 @@ type Service struct {
 	opts Options
 
 	ensured sync.Map // namespace -> platformres.Version ensured
+	// traitPasses records the background HPA-trait attach pass started per
+	// namespace and platformres.Version ("ns@version" -> struct{}).
+	traitPasses sync.Map
 	watches sync.Map // run name -> struct{}
 	envs    *ttlCache[[]Environment]
 	// trackLocks serializes deploys per track (namespace/component -> chan
@@ -95,10 +98,11 @@ func (s *Service) Meta(ctx context.Context) Meta {
 
 // EnsurePlatformResources upserts our ComponentType, SPA workflow and HPA
 // Trait into the org namespace (D9), once per process per namespace, and
-// attaches the trait to track Components created before it existed.
+// starts a background pass attaching the trait to track Components created
+// before it existed (attachTraitsInBackground; it never blocks the request).
 // Upgrades roll out on the next use: existing deployments keep their frozen
-// release until a P1 setting is written (see applyP1Binding) or a new build
-// is deployed.
+// release until a setting is written (see applyBindingSettings) or a new
+// build is deployed.
 func (s *Service) EnsurePlatformResources(ctx context.Context) error {
 	n := ns(ctx)
 	if v, ok := s.ensured.Load(n); ok && v.(int) >= platformres.Version {
@@ -125,7 +129,7 @@ func (s *Service) EnsurePlatformResources(ctx context.Context) error {
 	if err := s.oc.EnsureVersioned(ctx, n, openchoreo.KindComponentType, ct); err != nil {
 		return fmt.Errorf("ensure ComponentType: %w", err)
 	}
-	s.attachTraitsToTracks(ctx)
+	s.attachTraitsInBackground(ctx)
 	s.ensured.Store(n, platformres.Version)
 	return nil
 }

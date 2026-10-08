@@ -8,7 +8,11 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"time"
 
+	"golang.org/x/sync/errgroup"
+
+	"github.com/wso2/web-app-hosting/backend/internal/auth"
 	"github.com/wso2/web-app-hosting/backend/internal/openchoreo/gen"
 	"github.com/wso2/web-app-hosting/backend/internal/platformres"
 )
@@ -81,24 +85,55 @@ func (s *Service) ensureTrackTrait(ctx context.Context, t track) error {
 	return err
 }
 
+// Bounds of the background HPA-trait attach pass.
+const (
+	attachTraitsTimeout     = 5 * time.Minute
+	attachTraitsConcurrency = 4
+)
+
+// attachTraitsInBackground starts attachTraitsToTracks for the request's
+// namespace once per process per platformres.Version, detached from the
+// request (its own timeout, service identity) so the first request after a
+// rollout doesn't wait on every track Component being updated.
+func (s *Service) attachTraitsInBackground(ctx context.Context) {
+	key := ns(ctx) + "@" + strconv.Itoa(platformres.Version)
+	if _, started := s.traitPasses.LoadOrStore(key, struct{}{}); started {
+		return
+	}
+	bctx := auth.Detached(ctx)
+	s.async.Add(1)
+	go func() {
+		defer s.async.Done()
+		ctx, cancel := context.WithTimeout(bctx, attachTraitsTimeout)
+		defer cancel()
+		s.attachTraitsToTracks(ctx)
+	}()
+}
+
 // attachTraitsToTracks attaches the HPA trait to every web-app track
-// Component in the namespace that lacks it (CT upgrade to v3). Best effort:
-// a failure is logged, and the trait is attached again lazily before a P1
-// setting is written.
+// Component in the namespace that lacks it (CT upgrade to v3), a few at a
+// time. Best effort: failures are logged, and the trait is attached again
+// lazily (ensureTrackTrait) before a release is re-cut.
 func (s *Service) attachTraitsToTracks(ctx context.Context) {
 	comps, err := s.oc.ListComponents(ctx, ns(ctx), "", LabelProduct+"="+ProductName)
 	if err != nil {
 		slog.WarnContext(ctx, "could not list track components to attach the HPA trait", "error", err)
 		return
 	}
+	var g errgroup.Group
+	g.SetLimit(attachTraitsConcurrency)
 	for _, c := range comps {
 		if deleting(c) || c.Spec == nil || c.Spec.ComponentType.Name != platformres.ComponentTypeRef || label(c.Metadata, LabelWebApp) == "" {
 			continue
 		}
-		if err := s.ensureTrackTrait(ctx, trackOf(c)); err != nil {
-			slog.WarnContext(ctx, "could not attach the HPA trait", "component", c.Metadata.Name, "error", err)
-		}
+		g.Go(func() error {
+			if err := s.ensureTrackTrait(ctx, trackOf(c)); err != nil {
+				slog.WarnContext(ctx, "could not attach the HPA trait", "component", c.Metadata.Name, "error", err)
+			}
+			return nil
+		})
 	}
+	_ = g.Wait()
 }
 
 // applyP1Binding writes a P1 setting (health checks, autoscaling) to the
