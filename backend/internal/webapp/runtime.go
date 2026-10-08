@@ -56,7 +56,7 @@ func (s *Service) ReleaseDetails(ctx context.Context, webAppID, trackID, env str
 			}
 		}
 	}
-	if run, err := s.oc.GetWorkflowRun(ctx, ns(ctx), rel); err == nil {
+	if run, err := s.oc.GetWorkflowRun(ctx, ns(ctx), buildOfRelease(rel)); err == nil {
 		out.CommitSHA, out.CommitMessage = annotation(run.Metadata, AnnCommitSHA), annotation(run.Metadata, AnnCommitMessage)
 	}
 	return out, nil
@@ -64,7 +64,7 @@ func (s *Service) ReleaseDetails(ctx context.Context, webAppID, trackID, env str
 
 // Pods lists the environment's pods from the binding's resource tree.
 func (s *Service) Pods(ctx context.Context, webAppID, trackID, env string) ([]Pod, error) {
-	_, b, err := s.activeBinding(ctx, webAppID, trackID, env)
+	t, b, err := s.activeBinding(ctx, webAppID, trackID, env)
 	if err != nil {
 		return nil, err
 	}
@@ -84,6 +84,7 @@ func (s *Service) Pods(ctx context.Context, webAppID, trackID, env string) ([]Po
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt > out[j].StartedAt })
+	s.fillSinglePodUsage(ctx, *t, env, out)
 	return out, nil
 }
 

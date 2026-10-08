@@ -64,6 +64,13 @@ type Config struct {
 	PASURL           string // PAS internal base (for /wso2cloud-dp/git/... and /meta)
 	SecretManagerURL string
 	ObsProxyURL      string // cloud-obs-proxy base, e.g. https://.../wso2cloud-obs
+	// BillingURL is the billing user API base (TargetWSO2Cloud), e.g.
+	// https://.../billing/api/v1; plans gate P1 features.
+	BillingURL string
+	// FreePlanCodes are the billing plan codes treated as free.
+	FreePlanCodes []string
+	// LocalPlan is the plan every org is on when TargetOpenChoreo (free | paid).
+	LocalPlan string
 	// ObserverURL is the OpenChoreo Observer (TargetOpenChoreo).
 	ObserverURL string
 	// SecretTargetPlane is the plane the OC Secret API writes to (TargetOpenChoreo).
@@ -105,6 +112,9 @@ func Load(targetOverride string) (*Config, error) {
 		SecretManagerURL:      strings.TrimRight(env("SECRET_MANAGER_URL", ""), "/"),
 		ObsProxyURL:           strings.TrimRight(env("OBS_PROXY_URL", ""), "/"),
 		ObserverURL:           strings.TrimRight(env("OBSERVER_URL", ""), "/"),
+		BillingURL:            strings.TrimRight(env("BILLING_API_BASE_URL", ""), "/"),
+		FreePlanCodes:         envList("BILLING_FREE_PLAN_CODES"),
+		LocalPlan:             env("LOCAL_PLAN", "paid"),
 		SecretTargetPlaneKind: env("SECRET_TARGET_PLANE_KIND", "ClusterDataPlane"),
 		SecretTargetPlaneName: env("SECRET_TARGET_PLANE_NAME", "default"),
 		GitHubAPIURL:          strings.TrimRight(env("GITHUB_API_URL", "https://api.github.com"), "/"),
@@ -114,6 +124,9 @@ func Load(targetOverride string) (*Config, error) {
 	}
 	if targetOverride != "" {
 		c.Target = Target(targetOverride)
+	}
+	if len(c.FreePlanCodes) == 0 {
+		c.FreePlanCodes = []string{"web-app-hosting-free"}
 	}
 	if c.OCAPIURL == "" && c.PASURL != "" {
 		c.OCAPIURL = c.PASURL + "/wso2cloud-dp"
@@ -136,10 +149,14 @@ func (c *Config) validate() error {
 		need("PAS_URL", c.PASURL)
 		need("SECRET_MANAGER_URL", c.SecretManagerURL)
 		need("OBS_PROXY_URL", c.ObsProxyURL)
+		need("BILLING_API_BASE_URL", c.BillingURL)
 	case TargetOpenChoreo:
 		need("OC_API_URL", c.OCAPIURL)
 		need("OC_NAMESPACE", c.OCNamespace)
 		need("OBSERVER_URL", c.ObserverURL)
+		if c.LocalPlan != "free" && c.LocalPlan != "paid" {
+			return fmt.Errorf("LOCAL_PLAN must be \"free\" or \"paid\", got %q", c.LocalPlan)
+		}
 	default:
 		return fmt.Errorf("TARGET must be %q or %q, got %q", TargetWSO2Cloud, TargetOpenChoreo, c.Target)
 	}

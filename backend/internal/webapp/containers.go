@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/wso2/web-app-hosting/backend/internal/openchoreo/gen"
+	"github.com/wso2/web-app-hosting/backend/internal/platformres"
 )
 
 // CT environmentConfigs defaults (platformres componenttype.yaml.tmpl).
@@ -140,6 +141,15 @@ func (s *Service) UpdateContainer(ctx context.Context, webAppID, trackID, env, c
 	if u.ImagePullPolicy != "Always" && u.ImagePullPolicy != "IfNotPresent" {
 		return nil, errf(CodeBadRequest, "invalid image pull policy %q", u.ImagePullPolicy)
 	}
+	if AboveDefaultResources(u) {
+		l, err := s.limits(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !l.CustomResources {
+			return nil, planRequired("Container resources above the defaults (CPU %s, memory %s request / %s limit) are not included in your plan.", defaultCPULimit, defaultMemRequest, defaultMemLimit)
+		}
+	}
 	t, _, err := s.activeBinding(ctx, webAppID, trackID, env)
 	if err != nil {
 		return nil, err
@@ -160,6 +170,13 @@ func (s *Service) UpdateContainer(ctx context.Context, webAppID, trackID, env, c
 	return &out[0], nil
 }
 
+// AboveDefaultResources reports whether u asks for more than the CT
+// defaults (a paid-plan feature).
+func AboveDefaultResources(u ContainerUpdate) bool {
+	return u.CPURequest > ParseCPU(defaultCPURequest) || u.CPULimit > ParseCPU(defaultCPULimit) ||
+		u.MemoryRequest > ParseMemory(defaultMemRequest)>>20 || u.MemoryLimit > ParseMemory(defaultMemLimit)>>20
+}
+
 func nonNil(l []string) []string {
 	if l == nil {
 		return []string{}
@@ -167,36 +184,152 @@ func nonNil(l []string) []string {
 	return l
 }
 
-// Scaling returns the environment's scaling config (P0: fixed replicas).
+// Default HPA settings shown while autoscaling is off.
+const (
+	defaultHPAMin = 1
+	defaultHPAMax = 3
+	defaultHPACPU = 70
+)
+
+// hpaConfig reads the binding's HPA trait config (traitEnvironmentConfigs).
+func hpaConfig(spec *gen.ReleaseBindingSpec) (enabled bool, h HPASettings) {
+	h = HPASettings{MinReplicas: defaultHPAMin, MaxReplicas: defaultHPAMax}
+	if spec == nil || spec.TraitEnvironmentConfigs == nil {
+		cpu := defaultHPACPU
+		h.CPUUtilization = &cpu
+		return false, h
+	}
+	m, _ := (*spec.TraitEnvironmentConfigs)[platformres.HPATraitInstance].(map[string]any)
+	enabled, _ = m["enabled"].(bool)
+	if v := intOf(m["minReplicas"]); v > 0 {
+		h.MinReplicas = v
+	}
+	if v := intOf(m["maxReplicas"]); v > 0 {
+		h.MaxReplicas = v
+	}
+	if v := intOf(m["cpuUtilization"]); v > 0 {
+		h.CPUUtilization = &v
+	}
+	if v := intOf(m["memoryUtilization"]); v > 0 {
+		h.MemoryUtilization = &v
+	}
+	if h.CPUUtilization == nil && h.MemoryUtilization == nil && !enabled {
+		cpu := defaultHPACPU
+		h.CPUUtilization = &cpu
+	}
+	return enabled, h
+}
+
+func setHPAConfig(spec *gen.ReleaseBindingSpec, enabled bool, h HPASettings) {
+	m := map[string]any{}
+	if spec.TraitEnvironmentConfigs != nil {
+		m = *spec.TraitEnvironmentConfigs
+	}
+	cfg := map[string]any{"enabled": enabled}
+	if enabled {
+		cfg["minReplicas"], cfg["maxReplicas"] = h.MinReplicas, h.MaxReplicas
+		if h.CPUUtilization != nil {
+			cfg["cpuUtilization"] = *h.CPUUtilization
+		}
+		if h.MemoryUtilization != nil {
+			cfg["memoryUtilization"] = *h.MemoryUtilization
+		}
+	}
+	m[platformres.HPATraitInstance] = cfg
+	spec.TraitEnvironmentConfigs = &m
+}
+
+func toScaling(spec *gen.ReleaseBindingSpec) *ScalingConfig {
+	enabled, h := hpaConfig(spec)
+	out := &ScalingConfig{Method: ScaleNone, FixedReplicas: readEnvConfigs(spec).Replicas, HPA: h}
+	if enabled {
+		out.Method = ScaleHPA
+	}
+	return out
+}
+
+// Scaling methods (frontend ScalingMethod).
+const (
+	ScaleHPA  = "HPA"
+	ScaleNone = "None"
+)
+
+// Scaling returns the environment's scaling config.
 func (s *Service) Scaling(ctx context.Context, webAppID, trackID, env string) (*ScalingConfig, error) {
 	_, b, err := s.activeBinding(ctx, webAppID, trackID, env)
 	if err != nil {
 		return nil, err
 	}
-	c := readEnvConfigs(b.Spec)
-	return &ScalingConfig{Method: "None", FixedReplicas: c.Replicas, HPA: HPASettings{MinReplicas: 1, MaxReplicas: 3}}, nil
+	return toScaling(b.Spec), nil
 }
 
-// UpdateScaling sets fixed replicas (1..5). HPA is P1.
+// ValidateScaling checks a scaling config against the plan limits.
+func ValidateScaling(in ScalingConfig, l PlanLimits) error {
+	switch in.Method {
+	case ScaleHPA:
+		if !l.Autoscaling {
+			return planRequired("Autoscaling is not included in your plan.")
+		}
+		h := in.HPA
+		if h.MinReplicas < minReplicas || h.MaxReplicas > maxReplicas || h.MinReplicas > h.MaxReplicas {
+			return errf(CodeBadRequest, "autoscaling needs %d <= min replicas <= max replicas <= %d", minReplicas, maxReplicas)
+		}
+		if h.CPUUtilization == nil && h.MemoryUtilization == nil {
+			return errf(CodeBadRequest, "autoscaling needs a CPU or a memory utilization target")
+		}
+		for _, t := range []*int{h.CPUUtilization, h.MemoryUtilization} {
+			if t != nil && (*t < 1 || *t > 100) {
+				return errf(CodeBadRequest, "utilization targets must be 1-100%%")
+			}
+		}
+	case ScaleNone:
+		if in.FixedReplicas < minReplicas || in.FixedReplicas > maxReplicas {
+			return errf(CodeBadRequest, "replicas must be between %d and %d", minReplicas, maxReplicas)
+		}
+		if in.FixedReplicas > l.MaxReplicas {
+			return planRequired("Running more than %d replica is not included in your plan.", l.MaxReplicas)
+		}
+	default:
+		return errf(CodeBadRequest, "unknown scaling method %q", in.Method)
+	}
+	return nil
+}
+
+// UpdateScaling sets fixed replicas (1..5) or HPA autoscaling (paid plans).
+// The HPA trait owns the replica count while enabled.
 func (s *Service) UpdateScaling(ctx context.Context, webAppID, trackID, env string, in ScalingConfig) (*ScalingConfig, error) {
-	if in.Method != "None" {
-		return nil, errf(CodeNotSupported, "autoscaling is not available yet")
-	}
-	if in.FixedReplicas < minReplicas || in.FixedReplicas > maxReplicas {
-		return nil, errf(CodeBadRequest, "replicas must be between %d and %d", minReplicas, maxReplicas)
-	}
-	t, _, err := s.activeBinding(ctx, webAppID, trackID, env)
+	t, b, err := s.activeBinding(ctx, webAppID, trackID, env)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.oc.ApplyReleaseBinding(ctx, ns(ctx), t.Project, t.Name, env, func(spec *gen.ReleaseBindingSpec) {
+	l, err := s.limits(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := ValidateScaling(in, l); err != nil {
+		return nil, err
+	}
+	mutate := func(spec *gen.ReleaseBindingSpec) {
+		if in.Method == ScaleHPA {
+			setHPAConfig(spec, true, in.HPA)
+			return
+		}
+		setHPAConfig(spec, false, in.HPA)
 		c := readEnvConfigs(spec)
 		c.Replicas = in.FixedReplicas
 		writeEnvConfigs(spec, c)
-	}); err != nil {
+	}
+	var saved *gen.ReleaseBinding
+	if enabled, _ := hpaConfig(b.Spec); in.Method == ScaleHPA || enabled {
+		// The HPA trait must be in the bound release (re-cut if needed).
+		saved, err = s.applyP1Binding(ctx, *t, env, mutate)
+	} else {
+		saved, err = s.oc.ApplyReleaseBinding(ctx, ns(ctx), t.Project, t.Name, env, mutate)
+	}
+	if err != nil {
 		return nil, err
 	}
-	return s.Scaling(ctx, webAppID, trackID, env)
+	return toScaling(saved.Spec), nil
 }
 
 // Replicas lists the environment's pods as replicas.
@@ -216,7 +349,16 @@ func (s *Service) Replicas(ctx context.Context, webAppID, trackID, env string) (
 		}
 		var ready, total int
 		_, _ = fmtSscanf(p.Ready, &ready, &total)
-		out = append(out, ReplicaPod{Name: p.Name, Status: st, ReadyContainers: ready, TotalContainers: total, Restarts: p.Restarts, StartedAt: p.StartedAt})
+		rp := ReplicaPod{Name: p.Name, Status: st, ReadyContainers: ready, TotalContainers: total, Restarts: p.Restarts, StartedAt: p.StartedAt}
+		if p.CPUUsageMillicores != nil {
+			v := float64(*p.CPUUsageMillicores) / 1000
+			rp.CPUUsage = &v
+		}
+		if p.MemoryUsageBytes != nil {
+			v := round(float64(*p.MemoryUsageBytes)/mib, 1)
+			rp.MemoryUsageMb = &v
+		}
+		out = append(out, rp)
 	}
 	return out, nil
 }

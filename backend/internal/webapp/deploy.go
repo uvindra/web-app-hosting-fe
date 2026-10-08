@@ -171,7 +171,13 @@ func (s *Service) Deployments(ctx context.Context, webAppID, trackID string) ([]
 		if !ok || releaseOf(b) == "" {
 			continue
 		}
-		out = append(out, s.toDeployment(b, runs[releaseOf(b)]))
+		d := s.toDeployment(b, runs[buildOfRelease(releaseOf(b))])
+		if t.isImage() {
+			if r, err := s.oc.GetComponentRelease(ctx, ns(ctx), releaseOf(b)); err == nil {
+				d.Image = releaseImage(r)
+			}
+		}
+		out = append(out, d)
 	}
 	if out == nil {
 		out = []Deployment{}
@@ -182,7 +188,7 @@ func (s *Service) Deployments(ctx context.Context, webAppID, trackID string) ([]
 func (s *Service) toDeployment(b gen.ReleaseBinding, run gen.WorkflowRun) Deployment {
 	rel := releaseOf(b)
 	d := Deployment{
-		ID: b.Metadata.Name + "." + rel, Environment: b.Spec.Environment, BuildID: rel,
+		ID: b.Metadata.Name + "." + rel, Environment: b.Spec.Environment, BuildID: buildOfRelease(rel),
 		CommitSHA: annotation(run.Metadata, AnnCommitSHA), CommitMessage: annotation(run.Metadata, AnnCommitMessage),
 		Status: deploymentStatus(b), URL: s.bindingURL(b), DeployedAt: ts(b.Metadata.CreationTimestamp),
 	}
@@ -208,6 +214,9 @@ func (s *Service) deployRun(ctx context.Context, t track, env, runName string) (
 	if err := s.checkEnv(ctx, t, env); err != nil {
 		return nil, err
 	}
+	if err := s.checkEnvironmentAllowed(ctx, t.Project, env); err != nil {
+		return nil, err
+	}
 	unlock, err := s.lockTrack(ctx, t.Name)
 	if err != nil {
 		return nil, err
@@ -218,9 +227,13 @@ func (s *Service) deployRun(ctx context.Context, t track, env, runName string) (
 
 // deployRunLocked is deployRun for a caller already holding lockTrack.
 func (s *Service) deployRunLocked(ctx context.Context, t track, env, runName string) (*Deployment, error) {
+	ready := s.prepareForDeploy(ctx, t)
 	rel, run, err := s.ensureRelease(ctx, t, runName)
 	if err != nil {
 		return nil, err
+	}
+	if ready {
+		rel = s.upgradeForDeploy(ctx, t, rel)
 	}
 	return s.bindRelease(ctx, t, env, rel, run)
 }
@@ -244,6 +257,36 @@ func (s *Service) lockTrack(ctx context.Context, component string) (func(), erro
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
+}
+
+// prepareForDeploy makes sure releases cut for t carry the current
+// ComponentType and the HPA trait: the platform resources are ensured and
+// the trait attached. Best effort — it reports false (and the deploy goes
+// ahead with whatever the namespace has) when either fails.
+func (s *Service) prepareForDeploy(ctx context.Context, t track) bool {
+	if err := s.EnsurePlatformResources(ctx); err != nil {
+		slog.WarnContext(ctx, "platform resources not ensured; deploying without upgrading the release", "track", t.Name, "error", err)
+		return false
+	}
+	if err := s.ensureTrackTrait(ctx, t); err != nil {
+		slog.WarnContext(ctx, "could not attach the HPA trait; deploying without upgrading the release", "track", t.Name, "error", err)
+		return false
+	}
+	return true
+}
+
+// upgradeForDeploy returns the release to bind for a deploy or promotion:
+// release itself, or its re-cut copy when it predates the current
+// ComponentType (so a binding's P1 settings keep applying). Best effort: when
+// the re-cut fails, the release is bound as is. Callers hold lockTrack and
+// have run prepareForDeploy.
+func (s *Service) upgradeForDeploy(ctx context.Context, t track, release string) string {
+	cur, err := s.currentReleaseLocked(ctx, t, release)
+	if err != nil {
+		slog.WarnContext(ctx, "could not upgrade the release to the current ComponentType; deploying it as is", "release", release, "error", err)
+		return release
+	}
+	return cur
 }
 
 func (s *Service) bindRelease(ctx context.Context, t track, env, release string, run gen.WorkflowRun) (*Deployment, error) {
@@ -485,6 +528,9 @@ func (s *Service) Promote(ctx context.Context, webAppID, trackID string, in Prom
 	if err := s.checkEnv(ctx, *t, in.TargetEnvironment); err != nil {
 		return nil, err
 	}
+	if err := s.checkEnvironmentAllowed(ctx, t.Project, in.TargetEnvironment); err != nil {
+		return nil, err
+	}
 	src, err := s.oc.FindBinding(ctx, ns(ctx), t.Name, in.SourceEnvironment)
 	if err != nil {
 		return nil, err
@@ -495,9 +541,17 @@ func (s *Service) Promote(ctx context.Context, webAppID, trackID string, in Prom
 		return nil, errf(CodeConflict, "nothing to promote: %s has no running deployment", in.SourceEnvironment)
 	}
 	rel := releaseOf(*src)
-	run, _ := s.oc.GetWorkflowRun(ctx, ns(ctx), rel)
+	run, _ := s.oc.GetWorkflowRun(ctx, ns(ctx), buildOfRelease(rel))
 	if run == nil {
 		run = &gen.WorkflowRun{}
+	}
+	unlock, err := s.lockTrack(ctx, t.Name)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	if s.prepareForDeploy(ctx, *t) {
+		rel = s.upgradeForDeploy(ctx, *t, rel)
 	}
 	return s.bindRelease(ctx, *t, in.TargetEnvironment, rel, *run)
 }
@@ -527,7 +581,7 @@ func (s *Service) Redeploy(ctx context.Context, webAppID, trackID, env string) (
 	if err != nil {
 		return nil, err
 	}
-	run, _ := s.oc.GetWorkflowRun(ctx, ns(ctx), releaseOf(*b))
+	run, _ := s.oc.GetWorkflowRun(ctx, ns(ctx), buildOfRelease(releaseOf(*b)))
 	if run == nil {
 		run = &gen.WorkflowRun{}
 	}

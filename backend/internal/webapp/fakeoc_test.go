@@ -237,11 +237,30 @@ func (f *fakeOC) generate(w http.ResponseWriter, component string, body map[stri
 		writeJSON(w, 400, map[string]any{"error": "no workload"})
 		return
 	}
+	// Freeze the ComponentType and the component's traits/parameters, as
+	// OpenChoreo does.
+	ct := map[string]any{}
+	profile := map[string]any{}
+	if comp, ok := f.objs["components"][component]; ok {
+		spec, _ := comp["spec"].(map[string]any)
+		ref, _ := spec["componentType"].(map[string]any)
+		ctName, _ := ref["name"].(string)
+		_, short, _ := strings.Cut(ctName, "/")
+		if t, ok := f.objs["componenttypes"][short]; ok {
+			ct = map[string]any{"kind": "ComponentType", "name": ctName, "spec": clone(t)["spec"]}
+		}
+		if tr, ok := spec["traits"]; ok {
+			profile["traits"] = tr
+		}
+		if p, ok := spec["parameters"]; ok {
+			profile["parameters"] = p
+		}
+	}
 	f.put("componentreleases", map[string]any{
 		"metadata": map[string]any{"name": name},
 		"spec": map[string]any{
-			"owner": map[string]any{"componentName": component, "projectName": "default"}, "componentType": map[string]any{},
-			"workload": clone(wl),
+			"owner": map[string]any{"componentName": component, "projectName": "default"}, "componentType": ct,
+			"componentProfile": clone(profile), "workload": clone(wl),
 		},
 	})
 	writeJSON(w, 201, map[string]any{})
@@ -270,6 +289,8 @@ func (m *memSecrets) Delete(_ context.Context, ref string) error {
 }
 
 type fakeLogs struct {
+	// metrics answers QueryMetrics by metric (resource | http).
+	metrics map[string]map[string][]platform.MetricSample
 	entries []platform.LogEntry // newest first
 	// inclusive switches from the live Observer's window semantics (bounds
 	// truncated to seconds, both exclusive) to inclusive, full-precision bounds.
@@ -310,6 +331,16 @@ func (l *fakeLogs) QueryLogs(_ context.Context, q platform.LogQuery) ([]platform
 	return out, nil
 }
 
+// QueryMetrics answers from l.metrics.
+func (l *fakeLogs) QueryMetrics(_ context.Context, q platform.MetricsQuery) (map[string][]platform.MetricSample, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if m, ok := l.metrics[q.Metric]; ok {
+		return m, nil
+	}
+	return map[string][]platform.MetricSample{}, nil
+}
+
 type testEnv struct {
 	svc     *Service
 	oc      *fakeOC
@@ -332,10 +363,29 @@ func newTestEnv(t *testing.T) *testEnv {
 		t.Fatal(err)
 	}
 	sec, logs := &memSecrets{}, &fakeLogs{}
-	pl := &platform.Platform{Target: "openchoreo", Secrets: sec, Observability: logs, Git: &platform.PublicGitHub{APIURL: "http://127.0.0.1:1"}}
+	pl := &platform.Platform{Target: "openchoreo", Secrets: sec, Observability: logs, Git: &platform.PublicGitHub{APIURL: "http://127.0.0.1:1"}, Billing: &testBilling{typ: platform.PlanPaid}}
 	svc := New(oc, pl, Options{Profile: platformres.Profile{}, WatchInterval: time.Hour, ReleaseVerifyWait: time.Millisecond})
 	ctx := auth.WithOrg(context.Background(), &auth.Org{Namespace: testNS, Handle: "acme"})
 	return &testEnv{svc: svc, oc: f, secrets: sec, logs: logs, ctx: ctx}
+}
+
+// testBilling is a switchable plan.
+type testBilling struct {
+	mu  sync.Mutex
+	typ string
+}
+
+func (b *testBilling) Plan(context.Context) (*platform.PlanInfo, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return &platform.PlanInfo{Type: b.typ, Name: b.typ}, nil
+}
+
+func (e *testEnv) setPlan(typ string) {
+	b := e.svc.p.Billing.(*testBilling)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.typ = typ
 }
 
 type staticTokens struct{}

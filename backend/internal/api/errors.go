@@ -32,6 +32,8 @@ func Status(err error) (int, string) {
 			return http.StatusPaymentRequired, string(e.Code)
 		case webapp.CodeNotSupported:
 			return http.StatusNotImplemented, string(e.Code)
+		case webapp.CodePlanRequired:
+			return http.StatusForbidden, string(e.Code)
 		}
 	}
 	switch {

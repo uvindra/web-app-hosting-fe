@@ -57,12 +57,14 @@ func Build(cfg *config.Config) (*api.Server, error) {
 		p.Secrets = platform.NewSecretManagerStore(cfg.SecretManagerURL, tokens)
 		p.Observability = platform.NewObserverLogs(cfg.ObsProxyURL, tokens, true, false)
 		p.BillingEnabled = true
+		p.Billing = platform.NewCloudBilling(cfg.BillingURL, webapp.ProductName, cfg.FreePlanCodes, tokens)
 	} else {
 		p.Org = platform.StaticOrgResolver{Namespace: cfg.OCNamespace, Handle: cfg.LocalOrgHandle}
 		p.Git = public
 		p.Secrets = &platform.OCSecretStore{OC: oc, PlaneKind: cfg.SecretTargetPlaneKind, PlaneName: cfg.SecretTargetPlaneName}
 		obsURL := cfg.ObserverURL
 		p.Observability = platform.NewObserverLogs(obsURL, tokens, false, dev)
+		p.Billing = platform.StaticBilling{Type: cfg.LocalPlan}
 	}
 
 	svc := webapp.New(oc, p, webapp.Options{

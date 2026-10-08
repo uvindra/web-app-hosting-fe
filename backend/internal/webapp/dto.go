@@ -50,7 +50,7 @@ type WebApp struct {
 }
 
 type CreateWebAppInput struct {
-	SourceType         string `json:"sourceType"` // github | public-git
+	SourceType         string `json:"sourceType"` // github | public-git | docker
 	GitOrganization    string `json:"gitOrganization,omitempty"`
 	Repository         string `json:"repository"`
 	InstallationID     int64  `json:"installationId,omitempty"`
@@ -66,6 +66,9 @@ type CreateWebAppInput struct {
 	Port               int    `json:"port"`
 	// Docker is the Dockerfile build (preset docker only).
 	Docker *DockerBuild `json:"docker,omitempty"`
+	// Image / Tag: sourceType docker (a public container image; port = Port).
+	Image string `json:"image,omitempty"`
+	Tag   string `json:"tag,omitempty"`
 }
 
 // DockerBuild locates the Dockerfile and build context, both relative to the
@@ -150,6 +153,8 @@ type Deployment struct {
 	Status        string `json:"status"` // deploying | active | failed | stopped
 	DeployedAt    string `json:"deployedAt"`
 	URL           string `json:"url"`
+	// Image is set for image-sourced web apps (the deployed image reference).
+	Image string `json:"image,omitempty"`
 }
 
 type DeployBuildInput struct {
@@ -242,7 +247,7 @@ type HPASettings struct {
 }
 
 type ScalingConfig struct {
-	Method        string      `json:"method"` // HPA | None (P0: None only)
+	Method        string      `json:"method"` // HPA | None
 	HPA           HPASettings `json:"hpa"`
 	FixedReplicas int         `json:"fixedReplicas"`
 }

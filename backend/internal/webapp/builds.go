@@ -250,6 +250,9 @@ func (s *Service) BuildConfig(ctx context.Context, webAppID, trackID string) (*B
 	if err != nil {
 		return nil, err
 	}
+	if t.isImage() {
+		return nil, errf(CodeNotSupported, "this web app runs a container image; it has no source builds")
+	}
 	p := t.params()
 	cfg := &BuildConfig{RepoURL: t.RepoURL, Branch: t.Branch, BuildPreset: string(t.Preset), Port: t.Port, ComponentDirectory: "/"}
 	if t.AppPath != "" && t.AppPath != "." {
@@ -290,6 +293,9 @@ func (s *Service) LatestCommit(ctx context.Context, webAppID, trackID string) (*
 	if err != nil {
 		return nil, err
 	}
+	if t.isImage() {
+		return nil, errf(CodeNotSupported, "this web app runs a container image; it has no source builds")
+	}
 	c, err := s.p.Git.LatestCommit(ctx, t.repoRef(), t.Project, t.Name)
 	if err != nil {
 		return nil, err
@@ -302,6 +308,9 @@ func (s *Service) TriggerBuild(ctx context.Context, webAppID, trackID, sha strin
 	t, err := s.getTrack(ctx, webAppID, trackID)
 	if err != nil {
 		return nil, err
+	}
+	if t.isImage() {
+		return nil, errf(CodeNotSupported, "this web app runs a container image; it has no source builds")
 	}
 	commit := &platform.Commit{SHA: sha}
 	if c, err := s.p.Git.LatestCommit(platform.WithFreshReads(ctx), t.repoRef(), t.Project, t.Name); err == nil {

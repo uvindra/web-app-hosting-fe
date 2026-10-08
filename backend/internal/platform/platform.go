@@ -101,9 +101,31 @@ type LogEntry struct {
 	Container string
 }
 
-// Observability queries archived logs.
+// MetricsQuery is a metrics query against the observability plane.
+type MetricsQuery struct {
+	Namespace   string
+	Project     string
+	Component   string
+	Environment string
+	// Metric is "resource" (CPU/memory) or "http".
+	Metric     string
+	Start, End time.Time
+	Step       time.Duration
+}
+
+// MetricSample is one point of a metric series.
+type MetricSample struct {
+	Time  time.Time
+	Value float64
+}
+
+// Observability queries archived logs and metrics.
 type Observability interface {
 	QueryLogs(ctx context.Context, q LogQuery) ([]LogEntry, error)
+	// QueryMetrics returns the query's series by name (e.g. cpuUsage,
+	// memoryLimits, requestCount, latencyP99); an empty map when the
+	// platform has no data for the metric.
+	QueryMetrics(ctx context.Context, q MetricsQuery) (map[string][]MetricSample, error)
 }
 
 // Platform bundles the adapters for the configured target.
@@ -115,4 +137,6 @@ type Platform struct {
 	Observability Observability
 	// BillingEnabled reports whether a billing service (PAS 402 quota) exists.
 	BillingEnabled bool
+	// Billing reads the org's plan (feature gating).
+	Billing Billing
 }

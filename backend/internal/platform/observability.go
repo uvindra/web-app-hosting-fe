@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +31,55 @@ type obsScope struct {
 	Component       string `json:"component,omitempty"`
 	Environment     string `json:"environment,omitempty"`
 	WorkflowRunName string `json:"workflowRunName,omitempty"`
+}
+
+// QueryMetrics implements Observability (`POST {base}/api/v1/metrics/query`).
+// Resource series are totals across the component's pods (cores, bytes);
+// HTTP latencies are in seconds.
+func (o *ObserverLogs) QueryMetrics(ctx context.Context, q MetricsQuery) (map[string][]MetricSample, error) {
+	body := map[string]any{
+		"metric":      q.Metric,
+		"searchScope": obsScope{Namespace: q.Namespace, Project: q.Project, Component: q.Component, Environment: q.Environment},
+		"startTime":   q.Start.UTC().Format(time.RFC3339),
+		"endTime":     q.End.UTC().Format(time.RFC3339),
+	}
+	if q.Step > 0 {
+		body["step"] = formatStep(q.Step)
+	}
+	var resp map[string][]struct {
+		Timestamp string  `json:"timestamp"`
+		Value     float64 `json:"value"`
+	}
+	if err := o.call.do(ctx, http.MethodPost, o.BaseURL+"/api/v1/metrics/query", body, &resp); err != nil {
+		return nil, err
+	}
+	out := make(map[string][]MetricSample, len(resp))
+	for name, series := range resp {
+		samples := make([]MetricSample, 0, len(series))
+		for _, p := range series {
+			t, err := time.Parse(time.RFC3339Nano, p.Timestamp)
+			if err != nil {
+				continue
+			}
+			samples = append(samples, MetricSample{Time: t, Value: p.Value})
+		}
+		if len(samples) > 0 {
+			out[name] = samples
+		}
+	}
+	return out, nil
+}
+
+// formatStep renders a step as the Observer expects it (e.g. 1m, 30m, 1h).
+func formatStep(d time.Duration) string {
+	switch {
+	case d%time.Hour == 0:
+		return strconv.Itoa(int(d/time.Hour)) + "h"
+	case d%time.Minute == 0:
+		return strconv.Itoa(int(d/time.Minute)) + "m"
+	default:
+		return strconv.Itoa(int(d/time.Second)) + "s"
+	}
 }
 
 // QueryLogs implements Observability. Level filtering is applied here: the

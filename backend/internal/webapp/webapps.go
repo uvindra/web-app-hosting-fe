@@ -104,6 +104,10 @@ func (s *Service) toWebApp(tracks []track, envs []Environment, bindings bindingI
 	if w.DisplayName == "" {
 		w.DisplayName = def.WebApp
 	}
+	if def.isImage() {
+		w.Framework, w.BuildPreset = "Container image", string(PresetDocker)
+		w.RepoURL = annotation(def.comp.Metadata, AnnImage) + ":" + annotation(def.comp.Metadata, AnnImageTag)
+	}
 	if len(envs) > 0 {
 		if b, ok := bindings[def.Name][envs[0].ID]; ok && bindingActive(b) {
 			w.Status = webAppStatus(deploymentStatus(b))
@@ -135,6 +139,9 @@ func webAppStatus(deployment string) string {
 // our CT + SPA workflow (D9), create the Component, bind the git source and
 // start the first build. PAS answers 402 when the org is over quota (D7).
 func (s *Service) CreateWebApp(ctx context.Context, projectID string, in CreateWebAppInput) (*WebApp, error) {
+	if in.SourceType == SourceDocker {
+		return s.createImageWebApp(ctx, projectID, in)
+	}
 	if in.SourceType != "github" && in.SourceType != "public-git" {
 		return nil, errf(CodeNotSupported, "source type %q is not supported yet", in.SourceType)
 	}

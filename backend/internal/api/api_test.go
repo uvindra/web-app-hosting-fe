@@ -109,7 +109,7 @@ func (f *fakePAS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == "GET" && p == "deploymentpipelines/default":
 		writeJSON(w, 200, map[string]any{"metadata": map[string]any{"name": "default"}, "spec": map[string]any{"promotionPaths": []any{
 			map[string]any{"sourceEnvironmentRef": map[string]any{"name": "development"}, "targetEnvironmentRefs": []any{map[string]any{"name": "production"}}}}}})
-	case r.Method == "POST" && (p == "componenttypes" || p == "workflows"):
+	case r.Method == "POST" && (p == "componenttypes" || p == "workflows" || p == "traits"):
 		writeJSON(w, 201, body)
 	case r.Method == "GET" && p == "components":
 		sel := r.URL.Query().Get("labelSelector")
@@ -234,7 +234,7 @@ func TestCreateWebAppFlow(t *testing.T) {
 	for _, w := range pas.writes {
 		seen[w.Method+" "+strings.TrimPrefix(w.Path, "/api/v1/namespaces/org-ns/")] = w
 	}
-	for _, k := range []string{"POST projects", "POST workflows", "POST componenttypes", "POST components", "POST workflowruns"} {
+	for _, k := range []string{"POST projects", "POST workflows", "POST traits", "POST componenttypes", "POST components", "POST workflowruns"} {
 		w, ok := seen[k]
 		if !ok {
 			t.Fatalf("missing write %s (have %v)", k, pas.writes)

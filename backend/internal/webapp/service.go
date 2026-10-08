@@ -93,8 +93,12 @@ func (s *Service) Meta(ctx context.Context) Meta {
 	return m
 }
 
-// EnsurePlatformResources upserts our ComponentType + SPA workflow into the
-// org namespace (D9), once per process per namespace.
+// EnsurePlatformResources upserts our ComponentType, SPA workflow and HPA
+// Trait into the org namespace (D9), once per process per namespace, and
+// attaches the trait to track Components created before it existed.
+// Upgrades roll out on the next use: existing deployments keep their frozen
+// release until a P1 setting is written (see applyP1Binding) or a new build
+// is deployed.
 func (s *Service) EnsurePlatformResources(ctx context.Context) error {
 	n := ns(ctx)
 	if v, ok := s.ensured.Load(n); ok && v.(int) >= platformres.Version {
@@ -107,6 +111,13 @@ func (s *Service) EnsurePlatformResources(ctx context.Context) error {
 	if err := s.oc.EnsureVersioned(ctx, n, openchoreo.KindWorkflow, wf); err != nil {
 		return fmt.Errorf("ensure SPA workflow: %w", err)
 	}
+	tr, err := platformres.HPATrait(s.opts.Profile)
+	if err != nil {
+		return err
+	}
+	if err := s.oc.EnsureVersioned(ctx, n, openchoreo.KindTrait, tr); err != nil {
+		return fmt.Errorf("ensure HPA trait: %w", err)
+	}
 	ct, err := platformres.ComponentType(s.opts.Profile)
 	if err != nil {
 		return err
@@ -114,6 +125,7 @@ func (s *Service) EnsurePlatformResources(ctx context.Context) error {
 	if err := s.oc.EnsureVersioned(ctx, n, openchoreo.KindComponentType, ct); err != nil {
 		return fmt.Errorf("ensure ComponentType: %w", err)
 	}
+	s.attachTraitsToTracks(ctx)
 	s.ensured.Store(n, platformres.Version)
 	return nil
 }

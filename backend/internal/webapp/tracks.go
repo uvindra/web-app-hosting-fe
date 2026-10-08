@@ -17,6 +17,7 @@ import (
 	"github.com/wso2/web-app-hosting/backend/internal/openchoreo"
 	"github.com/wso2/web-app-hosting/backend/internal/openchoreo/gen"
 	"github.com/wso2/web-app-hosting/backend/internal/platform"
+	"github.com/wso2/web-app-hosting/backend/internal/platformres"
 )
 
 // track is a deployment track = one OC Component (D3).
@@ -213,6 +214,9 @@ func (s *Service) RepoBranches(ctx context.Context, webAppID string) ([]string, 
 	if err != nil {
 		return nil, err
 	}
+	if tracks[0].isImage() {
+		return []string{}, nil
+	}
 	return s.p.Git.ListBranches(ctx, tracks[0].repoRef())
 }
 
@@ -233,6 +237,9 @@ func (s *Service) CreateTrack(ctx context.Context, webAppID, branch string) (*De
 		}
 	}
 	def := tracks[0]
+	if def.isImage() {
+		return nil, errf(CodeNotSupported, "web apps that run a container image have a single deployment track")
+	}
 	if err := s.checkBranch(ctx, def.repoRef(), branch); err != nil {
 		return nil, err
 	}
@@ -455,6 +462,8 @@ type trackSpec struct {
 	InstallationID                                                int64
 	Params                                                        map[string]any
 	WorkflowKind, WorkflowName                                    string
+	// Image / ImageTag: image-sourced tracks (no workflow).
+	Image, ImageTag string
 }
 
 func (s *Service) createTrackComponent(ctx context.Context, project string, in trackSpec) (*gen.Component, error) {
@@ -463,11 +472,17 @@ func (s *Service) createTrackComponent(ctx context.Context, project string, in t
 		LabelWebApp:  in.WebApp,
 		LabelTrack:   Slug(in.Branch, 63),
 	}
+	if in.Branch == "" {
+		labels[LabelTrack] = "image"
+	}
 	ann := map[string]string{
 		AnnDisplayName: in.DisplayName, AnnDescription: in.Description, AnnPreset: string(in.Preset),
 		AnnDefaultTrack: strconv.FormatBool(in.IsDefault), AnnPort: strconv.Itoa(in.Port),
 		AnnSourceType: in.SourceType, AnnRepoURL: in.RepoURL, AnnAutoDeploy: strconv.FormatBool(in.AutoDeploy),
 		AnnBranch: in.Branch, ocDisplayName: in.DisplayName,
+	}
+	if in.Image != "" {
+		ann[AnnImage], ann[AnnImageTag] = in.Image, in.ImageTag
 	}
 	if in.InstallationID > 0 {
 		ann[AnnInstallationID] = strconv.FormatInt(in.InstallationID, 10)
@@ -476,10 +491,13 @@ func (s *Service) createTrackComponent(ctx context.Context, project string, in t
 	spec.Owner.ProjectName = project
 	kind := gen.ComponentSpecComponentTypeKindComponentType
 	spec.ComponentType.Kind = &kind
-	spec.ComponentType.Name = "deployment/web-app-hosting"
-	wk := gen.ComponentWorkflowConfigKind(in.WorkflowKind)
-	params := in.Params
-	spec.Workflow = &gen.ComponentWorkflowConfig{Kind: &wk, Name: in.WorkflowName, Parameters: &params}
+	spec.ComponentType.Name = platformres.ComponentTypeRef
+	withHPATrait(spec)
+	if in.WorkflowName != "" { // image-sourced web apps have no build workflow
+		wk := gen.ComponentWorkflowConfigKind(in.WorkflowKind)
+		params := in.Params
+		spec.Workflow = &gen.ComponentWorkflowConfig{Kind: &wk, Name: in.WorkflowName, Parameters: &params}
+	}
 	comp, err := s.oc.CreateComponent(ctx, ns(ctx), gen.Component{
 		Metadata: gen.ObjectMeta{Name: TrackComponentName(in.WebApp, in.Branch, in.IsDefault), Labels: &labels, Annotations: &ann},
 		Spec:     spec,

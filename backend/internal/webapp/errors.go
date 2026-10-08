@@ -14,6 +14,8 @@ const (
 	CodeConflict      Code = "CONFLICT"
 	CodeQuotaExceeded Code = "QUOTA_EXCEEDED"
 	CodeNotSupported  Code = "NOT_SUPPORTED"
+	// CodePlanRequired: the feature needs a paid plan (HTTP 403).
+	CodePlanRequired Code = "PLAN_REQUIRED"
 )
 
 // Error is a domain error with a code the API layer maps to an HTTP status.

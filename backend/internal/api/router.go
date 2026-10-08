@@ -24,6 +24,7 @@ const track = "/webapps/{webAppId}/tracks/{trackId}"
 // Routes is the API surface (paths relative to the base path).
 var Routes = []Route{
 	{"GET", "/meta", (*handlers).meta},
+	{"GET", "/plan", (*handlers).plan},
 	{"GET", "/projects", (*handlers).listProjects},
 	{"POST", "/projects", (*handlers).createProject},
 	{"GET", "/projects/{projectId}", (*handlers).getProject},
@@ -61,6 +62,13 @@ var Routes = []Route{
 	{"GET", track + "/environments/{env}/scaling", (*handlers).scaling},
 	{"PUT", track + "/environments/{env}/scaling", (*handlers).updateScaling},
 	{"GET", track + "/environments/{env}/replicas", (*handlers).replicas},
+	{"GET", track + "/environments/{env}/health-check", (*handlers).healthCheck},
+	{"PUT", track + "/environments/{env}/health-check", (*handlers).updateHealthCheck},
+	{"DELETE", track + "/environments/{env}/health-check", (*handlers).deleteHealthCheck},
+	{"GET", track + "/environments/{env}/metrics", (*handlers).metrics},
+	{"GET", track + "/environments/{env}/usage", (*handlers).usage},
+	{"GET", track + "/image", (*handlers).imageSource},
+	{"POST", track + "/image/deploy", (*handlers).deployImageTag},
 	{"GET", track + "/environments/{env}/configs", (*handlers).configs},
 	{"POST", track + "/environments/{env}/configs", (*handlers).createConfig},
 	{"PUT", track + "/environments/{env}/configs/{configId}", (*handlers).updateConfig},
@@ -376,6 +384,60 @@ func (h *handlers) replicas(w http.ResponseWriter, r *http.Request) {
 	a, t := ids(r)
 	v, err := h.svc.Replicas(r.Context(), a, t, r.PathValue("env"))
 	respond(w, r, http.StatusOK, v, err)
+}
+
+func (h *handlers) plan(w http.ResponseWriter, r *http.Request) {
+	v, err := h.svc.Plan(r.Context())
+	respond(w, r, http.StatusOK, v, err)
+}
+
+func (h *handlers) healthCheck(w http.ResponseWriter, r *http.Request) {
+	a, t := ids(r)
+	v, err := h.svc.HealthCheck(r.Context(), a, t, r.PathValue("env"))
+	respond(w, r, http.StatusOK, v, err)
+}
+
+func (h *handlers) updateHealthCheck(w http.ResponseWriter, r *http.Request) {
+	var in webapp.HealthCheck
+	if !decode(w, r, &in) {
+		return
+	}
+	a, t := ids(r)
+	v, err := h.svc.UpdateHealthCheck(r.Context(), a, t, r.PathValue("env"), in)
+	respond(w, r, http.StatusOK, v, err)
+}
+
+func (h *handlers) deleteHealthCheck(w http.ResponseWriter, r *http.Request) {
+	a, t := ids(r)
+	respond(w, r, http.StatusNoContent, nil, h.svc.DeleteHealthCheck(r.Context(), a, t, r.PathValue("env")))
+}
+
+func (h *handlers) metrics(w http.ResponseWriter, r *http.Request) {
+	a, t := ids(r)
+	v, err := h.svc.Metrics(r.Context(), a, t, r.PathValue("env"), webapp.MetricsRange(r.URL.Query().Get("range")))
+	respond(w, r, http.StatusOK, v, err)
+}
+
+func (h *handlers) usage(w http.ResponseWriter, r *http.Request) {
+	a, t := ids(r)
+	v, err := h.svc.Usage(r.Context(), a, t, r.PathValue("env"))
+	respond(w, r, http.StatusOK, v, err)
+}
+
+func (h *handlers) imageSource(w http.ResponseWriter, r *http.Request) {
+	a, t := ids(r)
+	v, err := h.svc.ImageSource(r.Context(), a, t)
+	respond(w, r, http.StatusOK, v, err)
+}
+
+func (h *handlers) deployImageTag(w http.ResponseWriter, r *http.Request) {
+	var in webapp.DeployImageInput
+	if !decode(w, r, &in) {
+		return
+	}
+	a, t := ids(r)
+	v, err := h.svc.DeployImageTag(r.Context(), a, t, in)
+	respond(w, r, http.StatusCreated, v, err)
 }
 
 func (h *handlers) configs(w http.ResponseWriter, r *http.Request) {

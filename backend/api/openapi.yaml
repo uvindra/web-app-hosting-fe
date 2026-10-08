@@ -13,6 +13,8 @@ info:
       OpenChoreo Component, identified by `trackId` (the Component name).
     - Errors use `{code, message}`. `402 QUOTA_EXCEEDED` = the plan's track quota
       is reached (PAS entitlement gate); `501 NOT_SUPPORTED` = a P1/P2 feature;
+      `403 PLAN_REQUIRED` = the feature needs a paid plan (HPA, replicas > 1,
+      resources above the defaults, environments past the first);
       `429 GIT_RATE_LIMITED` = the GitHub API rate limit is exhausted (public
       GitHub reads are cached for ~60s); `502 UPSTREAM_ERROR` / `504
       UPSTREAM_TIMEOUT` = OpenChoreo or a platform service failed / timed out.
@@ -32,6 +34,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Meta'
+        default:
+          $ref: '#/components/responses/Error'
+  /plan:
+    get:
+      operationId: getPlan
+      summary: The org's Web App Hosting plan and its feature limits
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plan'
         default:
           $ref: '#/components/responses/Error'
   /projects:
@@ -909,7 +924,7 @@ paths:
   /webapps/{webAppId}/tracks/{trackId}/environments/{env}/scaling:
     get:
       operationId: getScaling
-      summary: 'Scaling (P0: fixed replicas)'
+      summary: 'Scaling: fixed replicas or HPA'
       parameters:
       - name: webAppId
         in: path
@@ -937,7 +952,7 @@ paths:
           $ref: '#/components/responses/Error'
     put:
       operationId: updateScaling
-      summary: 'Set fixed replicas 1..5 (HPA: 501 NOT_SUPPORTED)'
+      summary: 'Set fixed replicas 1..5 or HPA (paid plans; 403 PLAN_REQUIRED)'
       parameters:
       - name: webAppId
         in: path
@@ -998,6 +1013,211 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/ReplicaPod'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/environments/{env}/health-check:
+    get:
+      operationId: getHealthCheck
+      summary: 'Liveness / readiness probes (an unset readiness probe = default TCP check on the web app port)'
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: env
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthCheck'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      operationId: updateHealthCheck
+      summary: 'Replace the probes (omit one to remove it); re-applies the binding (rolling restart)'
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: env
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HealthCheck'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthCheck'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteHealthCheck
+      summary: 'Remove both probes'
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: env
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: Done
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/environments/{env}/metrics:
+    get:
+      operationId: getMetrics
+      summary: 'CPU / memory (totals across pods) and HTTP metrics over a range'
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: env
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: range
+        in: query
+        required: true
+        schema:
+          type: string
+          enum: [30m, 1h, 6h, 24h]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebAppMetrics'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/environments/{env}/usage:
+    get:
+      operationId: getUsage
+      summary: 'Latest CPU / memory usage, totals across pods'
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: env
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Usage'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/image:
+    get:
+      operationId: getImageSource
+      summary: 'Image of an image-sourced track (404 for source-built tracks)'
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageSource'
+        default:
+          $ref: '#/components/responses/Error'
+  /webapps/{webAppId}/tracks/{trackId}/image/deploy:
+    post:
+      operationId: deployImageTag
+      summary: 'Deploy another tag of the image to the first environment'
+      parameters:
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: trackId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeployImageInput'
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deployment'
         default:
           $ref: '#/components/responses/Error'
   /webapps/{webAppId}/tracks/{trackId}/environments/{env}/configs:
@@ -1275,9 +1495,12 @@ components:
       enum: [nodejs, react, angular, dotnet, vuejs, python, go, ruby, php, springboot, static, docker]
     CreateWebAppInput:
       type: object
-      required: [sourceType, repository, branch, displayName, handler, buildPreset, port]
+      required: [sourceType, displayName, handler, port]
+      description: "Git sources need repository, branch and buildPreset; sourceType docker needs image (+ tag)."
       properties:
-        sourceType: {type: string, enum: [github, public-git]}
+        sourceType: {type: string, enum: [github, public-git, docker]}
+        image: {type: string, description: "docker: a public image without tag, e.g. nginxinc/nginx-unprivileged"}
+        tag: {type: string, description: "docker: image tag (default latest)"}
         gitOrganization: {type: string}
         repository: {type: string, description: "repo name, org/repo or full GitHub URL"}
         installationId: {type: integer, format: int64, description: "GitHub App installation (sourceType github)"}
@@ -1413,6 +1636,7 @@ components:
         status: {type: string, enum: [deploying, active, failed, stopped]}
         deployedAt: {type: string}
         url: {type: string}
+        image: {type: string, description: "image-sourced web apps: the deployed image"}
     DeployBuildInput:
       type: object
       required: [environment, build]
@@ -1499,6 +1723,75 @@ components:
         memoryLimit: {type: integer}
         command: {type: array, items: {type: string}}
         args: {type: array, items: {type: string}}
+    Probe:
+      type: object
+      required: [type, failureThreshold, successThreshold, initialDelaySeconds, periodSeconds, timeoutSeconds]
+      properties:
+        type: {type: string, enum: [httpGet, tcp, exec]}
+        failureThreshold: {type: integer}
+        successThreshold: {type: integer, description: "liveness: must be 1"}
+        initialDelaySeconds: {type: integer}
+        periodSeconds: {type: integer}
+        timeoutSeconds: {type: integer}
+        httpGet:
+          type: object
+          properties:
+            path: {type: string}
+            port: {type: integer, description: "must be the web app's port"}
+            httpHeaders: {type: array, items: {type: object, properties: {name: {type: string}, value: {type: string}}}}
+        tcpSocket: {type: object, properties: {port: {type: integer}}}
+        exec: {type: object, properties: {command: {type: array, items: {type: string}}}}
+    HealthCheck:
+      type: object
+      properties:
+        livenessProbe: {$ref: "#/components/schemas/Probe"}
+        readinessProbe: {$ref: "#/components/schemas/Probe"}
+    MetricsRow:
+      type: object
+      description: "One chart point: time (RFC 3339) plus one number per series."
+      properties:
+        time: {type: string}
+      additionalProperties: {type: number}
+    WebAppMetrics:
+      type: object
+      properties:
+        requestRows: {type: array, items: {$ref: "#/components/schemas/MetricsRow"}, description: "req/s: total, success"}
+        latencyRows: {type: array, items: {$ref: "#/components/schemas/MetricsRow"}, description: "ms: p50, p90, p99"}
+        errorRows: {type: array, items: {$ref: "#/components/schemas/MetricsRow"}, description: "% failed: errorRate"}
+        cpuRows: {type: array, items: {$ref: "#/components/schemas/MetricsRow"}, description: "vCPU: usage, request, limit (totals)"}
+        memoryRows: {type: array, items: {$ref: "#/components/schemas/MetricsRow"}, description: "MB: usage, request, limit (totals)"}
+        httpAvailable: {type: boolean, description: "false when the platform has no HTTP metrics for the web app"}
+    Usage:
+      type: object
+      properties:
+        cpuMillicores: {type: number}
+        memoryBytes: {type: integer, format: int64}
+        sampledAt: {type: string}
+    ImageSource:
+      type: object
+      properties:
+        image: {type: string}
+        tag: {type: string}
+        port: {type: integer}
+    DeployImageInput:
+      type: object
+      required: [tag]
+      properties:
+        tag: {type: string}
+    Plan:
+      type: object
+      properties:
+        type: {type: string, enum: [free, paid]}
+        name: {type: string}
+        status: {type: string}
+        trialDaysRemaining: {type: integer}
+        limits:
+          type: object
+          properties:
+            autoscaling: {type: boolean}
+            maxReplicas: {type: integer}
+            customResources: {type: boolean}
+            maxEnvironments: {type: integer, description: "0 = all"}
     ScalingConfig:
       type: object
       properties:
@@ -1519,8 +1812,8 @@ components:
         readyContainers: {type: integer}
         totalContainers: {type: integer}
         restarts: {type: integer}
-        cpuUsage: {type: number, description: "vCPU; absent until usage metrics are available (P1)."}
-        memoryUsageMb: {type: number, description: "Absent until usage metrics are available (P1)."}
+        cpuUsage: {type: number, description: "vCPU; set only when the environment runs a single pod (usage is reported as totals)."}
+        memoryUsageMb: {type: number, description: "As cpuUsage."}
         startedAt: {type: string}
     ConfigEntry:
       type: object
