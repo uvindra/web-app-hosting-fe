@@ -162,6 +162,16 @@ one card per pipeline environment) — no registry, no plugin indirection.
     for writes. A timeout answers `504 UPSTREAM_TIMEOUT` with a readable message.
   - Console: the create-track dialog shows the BFF's message for branch-list failures and says the first build is
     starting; branch lists are kept for 60s and not retried on 429.
+- **Preset form fields:** Static Site and Docker showed Build Command / Build Path / Node Version with React defaults,
+  and buildpack presets were prefilled with `npm run build` / `/build`, none of which the BFF used.
+  - `constants/buildPresets.ts` now has `presetKind` (spa | static | docker | buildpack), `presetDefaults` and
+    `toBuildInput` (only what the BFF consumes): SPA → build command, output dir, Node version; Static → "Directory
+    to serve" (default `/`), no build; Docker → Dockerfile path (default `Dockerfile`) + build context (default `.`),
+    both relative to the component directory, + port; buildpack → port (+ optional Node version for NodeJS).
+    Picking a preset resets the fields to its defaults. The Build page's config panel shows the same per-preset fields.
+  - BFF: `CreateWebAppInput.docker {filePath, context}` (OpenAPI `DockerBuild`) feeds the dockerfile-builder's
+    `docker.filePath` / `docker.context` (resolved against the component directory, rejected if outside the repo);
+    `BuildConfig.docker` reports them; static build configs no longer report a Node version.
 
 ### 2026-10-08 — Fix post-login redirect
 

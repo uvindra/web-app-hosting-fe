@@ -64,6 +64,17 @@ type CreateWebAppInput struct {
 	BuildPath          string `json:"buildPath"`
 	NodeVersion        string `json:"nodeVersion,omitempty"`
 	Port               int    `json:"port"`
+	// Docker is the Dockerfile build (preset docker only).
+	Docker *DockerBuild `json:"docker,omitempty"`
+}
+
+// DockerBuild locates the Dockerfile and build context. On create both are
+// relative to the component directory (defaults: "Dockerfile" and the
+// component directory itself); BuildConfig reports them from the repository
+// root, as the workflow uses them.
+type DockerBuild struct {
+	FilePath string `json:"filePath,omitempty"`
+	Context  string `json:"context,omitempty"`
 }
 
 type DeploymentTrack struct {
@@ -107,6 +118,8 @@ type BuildConfig struct {
 	BuildPath          string `json:"buildPath"`
 	NodeVersion        string `json:"nodeVersion,omitempty"`
 	Port               int    `json:"port"`
+	// Docker is set for the docker preset (paths from the repository root).
+	Docker *DockerBuild `json:"docker,omitempty"`
 }
 
 type LatestCommit struct {

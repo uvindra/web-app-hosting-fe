@@ -1287,10 +1287,20 @@ components:
         handler: {type: string, pattern: "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", maxLength: 40}
         description: {type: string}
         buildPreset: {$ref: "#/components/schemas/BuildPreset"}
-        buildCommand: {type: string}
-        buildPath: {type: string}
-        nodeVersion: {type: string}
-        port: {type: integer}
+        buildCommand: {type: string, description: "react/angular/vuejs only"}
+        buildPath: {type: string, description: "output directory (react/angular/vuejs), or the directory to serve (static)"}
+        nodeVersion: {type: string, description: "react/angular/vuejs, and nodejs (BP_NODE_VERSION)"}
+        port: {type: integer, description: "server presets; SPA/static presets always serve on 8080"}
+        docker: {$ref: "#/components/schemas/DockerBuild"}
+    DockerBuild:
+      type: object
+      description: |
+        Dockerfile build (preset docker). On create both paths are relative to
+        componentDirectory (defaults: `Dockerfile`, and the component directory
+        itself); BuildConfig reports them from the repository root.
+      properties:
+        filePath: {type: string}
+        context: {type: string}
     BindInstallationRequest:
       type: object
       required: [code]
@@ -1376,6 +1386,7 @@ components:
         buildPath: {type: string}
         nodeVersion: {type: string}
         port: {type: integer}
+        docker: {$ref: "#/components/schemas/DockerBuild"}
     LatestCommit:
       type: object
       properties:

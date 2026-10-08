@@ -2,6 +2,7 @@ package webapp
 
 import (
 	"fmt"
+	"path"
 	"strings"
 
 	"github.com/wso2/web-app-hosting/backend/internal/platformres"
@@ -60,6 +61,9 @@ type BuildSpec struct {
 	OutputDir    string
 	NodeVersion  string
 	Port         int
+	// DockerfilePath and DockerContext (docker preset) are relative to AppPath.
+	DockerfilePath string
+	DockerContext  string
 }
 
 // Workflow is the resolved OpenChoreo workflow for a preset.
@@ -79,6 +83,22 @@ func NormalizeAppPath(p string) string {
 		return "."
 	}
 	return p
+}
+
+// underAppPath resolves rel (default def) against the component directory
+// app and returns the repository-relative path ("." for the root). It must
+// stay inside the repository.
+func underAppPath(app, rel, def string) (string, error) {
+	rel = strings.TrimSpace(rel)
+	if rel == "" {
+		rel = def
+	}
+	rel = strings.TrimLeft(rel, "/")
+	p := path.Clean(path.Join(app, rel))
+	if p == ".." || strings.HasPrefix(p, "../") {
+		return "", fmt.Errorf("%q is outside the repository", rel)
+	}
+	return p, nil
 }
 
 // WorkflowFor maps a preset to its workflow + parameters (PLAN_P0 "Preset → workflow").
@@ -112,10 +132,21 @@ func WorkflowFor(b BuildSpec) (Workflow, error) {
 			"spa":        map[string]any{"nodeVersion": node, "buildCommand": cmd, "outputDir": out},
 		}}, nil
 	case b.Preset == PresetDocker:
-		ctx := NormalizeAppPath(b.AppPath)
+		app := NormalizeAppPath(b.AppPath)
+		buildCtx, err := underAppPath(app, b.DockerContext, ".")
+		if err != nil {
+			return Workflow{}, fmt.Errorf("docker build context: %w", err)
+		}
+		file, err := underAppPath(app, b.DockerfilePath, "Dockerfile")
+		if err != nil {
+			return Workflow{}, fmt.Errorf("dockerfile path: %w", err)
+		}
+		if file == "." || file == app || strings.HasSuffix(b.DockerfilePath, "/") {
+			return Workflow{}, fmt.Errorf("dockerfile path must name a file")
+		}
 		return Workflow{Kind: "ClusterWorkflow", Name: "dockerfile-builder", Parameters: map[string]any{
 			"repository": repo,
-			"docker":     map[string]any{"context": ctx, "filePath": strings.TrimPrefix(ctx+"/Dockerfile", "./")},
+			"docker":     map[string]any{"context": buildCtx, "filePath": file},
 		}}, nil
 	default:
 		env := []any{}

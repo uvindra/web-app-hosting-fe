@@ -415,3 +415,27 @@ func TestCreateReturnsBeforeFirstBuild(t *testing.T) {
 		t.Fatalf("first builds = %v", runs)
 	}
 }
+
+func TestCreateDockerWebAppUsesDockerFields(t *testing.T) {
+	pas := &fakePAS{}
+	srv, _ := newTestServer(t, pas)
+	call(t, srv, "GET", "/projects", nil)
+	in := map[string]any{
+		"sourceType": "public-git", "repository": "https://github.com/acme/api", "branch": "main", "componentDirectory": "/svc",
+		"displayName": "API", "handler": "api", "buildPreset": "docker", "port": 9000,
+		"docker": map[string]any{"filePath": "deploy/Dockerfile", "context": ".."},
+	}
+	if code, obj, _ := call(t, srv, "POST", "/projects/default/webapps", in); code != 201 {
+		t.Fatalf("create: %d %v", code, obj)
+	}
+	pas.svc.WaitBackground()
+	code, cfg, _ := call(t, srv, "GET", "/webapps/api/tracks/api/build-config", nil)
+	d, _ := cfg["docker"].(map[string]any)
+	if code != 200 || d["filePath"] != "svc/deploy/Dockerfile" || d["context"] != "." || cfg["port"] != float64(9000) {
+		t.Fatalf("build-config: %d %v", code, cfg)
+	}
+	in["handler"], in["docker"] = "api2", map[string]any{"filePath": "../../Dockerfile"}
+	if code, obj, _ := call(t, srv, "POST", "/projects/default/webapps", in); code != 400 {
+		t.Fatalf("escaping dockerfile: %d %v", code, obj)
+	}
+}

@@ -157,6 +157,7 @@ func (s *Service) CreateWebApp(ctx context.Context, projectID string, in CreateW
 	wf, err := WorkflowFor(BuildSpec{
 		Preset: preset, RepoURL: repoURL, Branch: branch, AppPath: in.ComponentDirectory,
 		BuildCommand: in.BuildCommand, OutputDir: in.BuildPath, NodeVersion: in.NodeVersion, Port: port,
+		DockerfilePath: dockerField(in.Docker, true), DockerContext: dockerField(in.Docker, false),
 	})
 	if err != nil {
 		return nil, errf(CodeBadRequest, "%s", err.Error())
@@ -195,6 +196,16 @@ func (s *Service) CreateWebApp(ctx context.Context, projectID string, in CreateW
 	s.firstBuild(ctx, in.Handler, t.Name)
 	w := s.toWebApp([]track{t}, nil, nil, nil)
 	return &w, nil
+}
+
+func dockerField(d *DockerBuild, file bool) string {
+	if d == nil {
+		return ""
+	}
+	if file {
+		return d.FilePath
+	}
+	return d.Context
 }
 
 func repoURLOf(in CreateWebAppInput) (string, error) {

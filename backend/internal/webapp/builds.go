@@ -225,7 +225,14 @@ func (s *Service) BuildConfig(ctx context.Context, webAppID, trackID string) (*B
 	if spa, ok := p["spa"].(map[string]any); ok {
 		cfg.BuildCommand, _ = spa["buildCommand"].(string)
 		cfg.BuildPath, _ = spa["outputDir"].(string)
-		cfg.NodeVersion, _ = spa["nodeVersion"].(string)
+		if t.Preset != PresetStatic { // static sites aren't built: no Node
+			cfg.NodeVersion, _ = spa["nodeVersion"].(string)
+		}
+	}
+	if d, ok := p["docker"].(map[string]any); ok {
+		cfg.Docker = &DockerBuild{}
+		cfg.Docker.FilePath, _ = d["filePath"].(string)
+		cfg.Docker.Context, _ = d["context"].(string)
 	}
 	if env, ok := p["buildEnv"].([]any); ok {
 		for _, e := range env {

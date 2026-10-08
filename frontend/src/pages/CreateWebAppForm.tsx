@@ -9,7 +9,7 @@ import { useCreateWebApp } from '../hooks/useWebApps';
 import { useBranches, useGitHubInstallations, useGitHubRepos } from '../hooks/useGit';
 import { hasProject, useScope } from '../nav';
 import { gitProviderBase, importWebAppUrl, newWebAppUrl, webAppOverviewUrl } from '../paths';
-import { isSpaPreset } from '../constants/buildPresets';
+import { isSpaPreset, presetDefaults, presetKind, SPA_PORT, toBuildInput, usesNodeVersion, type BuildFieldValues, type PresetKind } from '../constants/buildPresets';
 import { toHandler } from '../utils/toHandler';
 import { normalizeGitHubRepoUrl, parseGitHubUrl } from '../utils/parseGitHubUrl';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
@@ -86,6 +86,79 @@ const HANDLER_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 const BRANCH_LOOKUP_DEBOUNCE_MS = 500;
 
+interface BuildFieldsProps {
+  kind: PresetKind;
+  preset: BuildPreset;
+  values: BuildFieldValues;
+  onChange: (field: keyof BuildFieldValues, value: string) => void;
+}
+
+/** The build fields the chosen preset actually uses (see `presetKind`); the port is rendered separately. */
+function BuildFields({ kind, preset, values, onChange }: BuildFieldsProps): JSX.Element | null {
+  const nodeVersion = usesNodeVersion(preset) ? (
+    <Grid size={{ xs: 12, md: 4 }}>
+      <TextField
+        label={kind === 'spa' ? 'Node Version' : 'Node Version (Optional)'}
+        value={values.nodeVersion}
+        onChange={(e) => onChange('nodeVersion', e.target.value)}
+        fullWidth
+        helperText={kind === 'spa' ? 'Node.js major version used to build' : "Defaults to the buildpack's Node.js LTS"}
+      />
+    </Grid>
+  ) : null;
+  switch (kind) {
+    case 'spa':
+      return (
+        <Grid container spacing={3} sx={{ mb: 4 }}>
+          <Grid size={{ xs: 12, md: 4 }}>
+            <TextField label="Build Command" value={values.buildCommand} onChange={(e) => onChange('buildCommand', e.target.value)} fullWidth />
+          </Grid>
+          <Grid size={{ xs: 12, md: 4 }}>
+            <TextField label="Build Path" value={values.buildPath} onChange={(e) => onChange('buildPath', e.target.value)} fullWidth helperText="Output directory of the build" />
+          </Grid>
+          {nodeVersion}
+        </Grid>
+      );
+    case 'static':
+      return (
+        <Grid container spacing={3} sx={{ mb: 4 }}>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <TextField
+              label="Directory to serve"
+              value={values.buildPath}
+              onChange={(e) => onChange('buildPath', e.target.value)}
+              fullWidth
+              helperText="Relative to the component directory (/ serves it as is). No build step runs."
+            />
+          </Grid>
+        </Grid>
+      );
+    case 'docker':
+      return (
+        <Grid container spacing={3} sx={{ mb: 4 }}>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <TextField label="Dockerfile Path" value={values.dockerfilePath} onChange={(e) => onChange('dockerfilePath', e.target.value)} fullWidth helperText="Relative to the component directory" />
+          </Grid>
+          <Grid size={{ xs: 12, md: 6 }}>
+            <TextField
+              label="Build Context"
+              value={values.dockerContext}
+              onChange={(e) => onChange('dockerContext', e.target.value)}
+              fullWidth
+              helperText="Relative to the component directory (. = the component directory)"
+            />
+          </Grid>
+        </Grid>
+      );
+    default:
+      return nodeVersion ? (
+        <Grid container spacing={3} sx={{ mb: 4 }}>
+          {nodeVersion}
+        </Grid>
+      ) : null;
+  }
+}
+
 function branchErrorText(err: unknown): string {
   if (err instanceof HttpError && err.code === 'GIT_RATE_LIMITED') return `${err.message} — enter a branch`;
   if (err instanceof HttpError && err.status === 404) return 'Repository not found (is it public?) — enter a branch';
@@ -112,6 +185,7 @@ export default function CreateWebAppForm(): JSX.Element {
   const [handler, setHandler] = useState('');
   const [handlerEdited, setHandlerEdited] = useState(false);
   const [description, setDescription] = useState('');
+  // Port of a Docker *image* import (Git presets keep theirs in `build`).
   const [port, setPort] = useState('8080');
 
   // Git fields
@@ -121,9 +195,14 @@ export default function CreateWebAppForm(): JSX.Element {
   const [branch, setBranch] = useState('main');
   const [componentDirectory, setComponentDirectory] = useState('/');
   const [buildPreset, setBuildPreset] = useState<BuildPreset>('react');
-  const [buildCommand, setBuildCommand] = useState('npm run build');
-  const [buildPath, setBuildPath] = useState('/build');
-  const [nodeVersion, setNodeVersion] = useState('18');
+  const [build, setBuild] = useState<BuildFieldValues>(() => presetDefaults('react'));
+  const setBuildField = (field: keyof BuildFieldValues, value: string) => setBuild((b) => ({ ...b, [field]: value }));
+  // Picking a preset resets the build fields to that preset's defaults (keeping a typed port for server presets).
+  const selectPreset = (preset: BuildPreset) => {
+    setBuildPreset(preset);
+    setBuild(presetDefaults(preset, isSpaPreset(buildPreset) ? String(SPA_PORT) : build.port));
+  };
+  const kind = presetKind(buildPreset);
 
   // Docker fields
   const [registryType, setRegistryType] = useState<CreateWebAppDockerInput['registryType']>('dockerhub');
@@ -146,8 +225,10 @@ export default function CreateWebAppForm(): JSX.Element {
 
   const effectiveHandler = handlerEdited ? handler : toHandler(displayName);
   const handlerError = !effectiveHandler ? null : !HANDLER_RE.test(effectiveHandler) ? 'Use lowercase letters, numbers and hyphens only' : null;
-  const portNumber = Number(port);
-  const portValid = Number.isInteger(portNumber) && portNumber > 0 && portNumber < 65536;
+  const fixedPort = !isDocker && isSpaPreset(buildPreset);
+  const portValue = isDocker ? port : build.port;
+  const portNumber = Number(portValue);
+  const portValid = fixedPort || (Number.isInteger(portNumber) && portNumber > 0 && portNumber < 65536);
 
   const handleRepoUrlBlur = () => {
     const parsed = parseGitHubUrl(repoUrl);
@@ -218,10 +299,7 @@ export default function CreateWebAppForm(): JSX.Element {
             handler: effectiveHandler,
             description: description.trim() || undefined,
             buildPreset,
-            buildCommand: buildCommand.trim(),
-            buildPath: buildPath.trim(),
-            nodeVersion: nodeVersion.trim() || undefined,
-            port: portNumber,
+            ...toBuildInput(buildPreset, build),
           };
       const webApp = await createWebApp.mutateAsync(input);
       navigate(webAppOverviewUrl(scope.org, project.handler, webApp.handler));
@@ -390,7 +468,7 @@ export default function CreateWebAppForm(): JSX.Element {
               <Grid key={preset.value} size="auto">
                 <Card
                   variant="outlined"
-                  onClick={() => setBuildPreset(preset.value)}
+                  onClick={() => selectPreset(preset.value)}
                   sx={{
                     cursor: 'pointer',
                     pl: 1,
@@ -414,17 +492,7 @@ export default function CreateWebAppForm(): JSX.Element {
             ))}
           </Grid>
 
-          <Grid container spacing={3} sx={{ mb: 4 }}>
-            <Grid size={{ xs: 12, md: 4 }}>
-              <TextField label="Build Command" value={buildCommand} onChange={(e) => setBuildCommand(e.target.value)} fullWidth />
-            </Grid>
-            <Grid size={{ xs: 12, md: 4 }}>
-              <TextField label="Build Path" value={buildPath} onChange={(e) => setBuildPath(e.target.value)} fullWidth />
-            </Grid>
-            <Grid size={{ xs: 12, md: 4 }}>
-              <TextField label="Node Version" value={nodeVersion} onChange={(e) => setNodeVersion(e.target.value)} fullWidth />
-            </Grid>
-          </Grid>
+          <BuildFields kind={kind} preset={buildPreset} values={build} onChange={setBuildField} />
         </>
       )}
 
@@ -433,12 +501,12 @@ export default function CreateWebAppForm(): JSX.Element {
           <TextField
             label="Port"
             type="number"
-            value={isSpaPreset(buildPreset) && !isDocker ? '8080' : port}
-            onChange={(e) => setPort(e.target.value)}
-            disabled={isSpaPreset(buildPreset) && !isDocker}
+            value={fixedPort ? String(SPA_PORT) : portValue}
+            onChange={(e) => (isDocker ? setPort(e.target.value) : setBuildField('port', e.target.value))}
+            disabled={fixedPort}
             fullWidth
-            error={!portValid && port !== ''}
-            helperText={isSpaPreset(buildPreset) && !isDocker ? 'Single-page and static apps are served by nginx on port 8080.' : !portValid && port !== '' ? 'Enter a valid port (1-65535)' : 'Port your app listens on'}
+            error={!portValid && portValue !== ''}
+            helperText={fixedPort ? `Single-page and static apps are served by nginx on port ${SPA_PORT}.` : !portValid && portValue !== '' ? 'Enter a valid port (1-65535)' : 'Port your app listens on'}
           />
         </Grid>
       </Grid>

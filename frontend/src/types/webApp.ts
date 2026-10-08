@@ -40,10 +40,21 @@ export interface CreateWebAppGitInput {
   handler: string;
   description?: string;
   buildPreset: BuildPreset;
-  buildCommand: string;
-  buildPath: string;
+  /** SPA presets (React/Angular/Vue) only. */
+  buildCommand?: string;
+  /** SPA output directory, or the static site's directory to serve. */
+  buildPath?: string;
+  /** SPA presets and NodeJS. */
   nodeVersion?: string;
+  /** Ignored for SPA/static presets (always 8080). */
   port: number;
+  /** Docker preset: both paths relative to `componentDirectory`. */
+  docker?: DockerBuild;
+}
+
+export interface DockerBuild {
+  filePath?: string;
+  context?: string;
 }
 
 export interface CreateWebAppDockerInput {

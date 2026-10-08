@@ -1,4 +1,4 @@
-import type { BuildPreset } from './webApp';
+import type { BuildPreset, DockerBuild } from './webApp';
 
 export type BuildRunStatus = 'success' | 'failed' | 'in-progress';
 
@@ -33,6 +33,8 @@ export interface BuildConfig {
   buildPath: string;
   nodeVersion?: string;
   port: number;
+  /** Docker preset: paths from the repository root. */
+  docker?: DockerBuild;
 }
 
 export interface LatestCommit {

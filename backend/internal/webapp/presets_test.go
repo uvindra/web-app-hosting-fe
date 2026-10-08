@@ -86,3 +86,51 @@ func TestSlugAndNames(t *testing.T) {
 		t.Error("track names")
 	}
 }
+
+func TestWorkflowForDockerPaths(t *testing.T) {
+	cases := []struct {
+		app, file, ctx    string
+		wantFile, wantCtx string
+		wantErr           bool
+	}{
+		{"/", "", "", "Dockerfile", ".", false},
+		{"/svc", "", "", "svc/Dockerfile", "svc", false},
+		{"/svc", "docker/Dockerfile.prod", "", "svc/docker/Dockerfile.prod", "svc", false},
+		{"/svc", "Dockerfile", "..", "svc/Dockerfile", ".", false},
+		{"svc", "/build/Dockerfile", "./src", "svc/build/Dockerfile", "svc/src", false},
+		{"/svc", "../../Dockerfile", "", "", "", true},
+		{"/", "", "../x", "", "", true},
+		{"/svc", ".", "", "", "", true},
+	}
+	for _, c := range cases {
+		wf, err := WorkflowFor(BuildSpec{Preset: PresetDocker, RepoURL: "u", Branch: "main", AppPath: c.app, DockerfilePath: c.file, DockerContext: c.ctx})
+		if c.wantErr {
+			if err == nil {
+				t.Errorf("%+v: expected an error", c)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("%+v: %v", c, err)
+		}
+		d := wf.Parameters["docker"].(map[string]any)
+		if d["filePath"] != c.wantFile || d["context"] != c.wantCtx {
+			t.Errorf("%+v: docker = %v", c, d)
+		}
+	}
+}
+
+func TestWorkflowForIgnoresUnusedFields(t *testing.T) {
+	// Buildpack presets don't take a build command / output dir; Node only for nodejs.
+	wf, err := WorkflowFor(BuildSpec{Preset: PresetPython, RepoURL: "u", Branch: "main", BuildCommand: "npm run build", OutputDir: "/build", NodeVersion: "18", Port: 5000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := wf.Parameters["spa"]; ok {
+		t.Errorf("python got spa params: %v", wf.Parameters)
+	}
+	env := wf.Parameters["buildEnv"].([]any)
+	if len(env) != 1 || env[0].(map[string]any)["name"] != "PORT" {
+		t.Errorf("python buildEnv = %v", env)
+	}
+}
