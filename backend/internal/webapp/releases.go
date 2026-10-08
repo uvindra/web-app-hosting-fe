@@ -142,6 +142,9 @@ func (s *Service) currentReleaseLocked(ctx context.Context, t track, release str
 	if releaseIsCurrent(old) {
 		return release, nil
 	}
+	if old == nil || old.Spec == nil {
+		return "", errf(CodeConflict, "release %q has no spec to upgrade", release)
+	}
 	want := releaseImage(old)
 	name := buildOfRelease(release) + "--r" + strconv.Itoa(platformres.Version)
 	if r, err := s.oc.GetComponentRelease(ctx, n, name); err == nil {
@@ -178,19 +181,22 @@ func (s *Service) currentReleaseLocked(ctx context.Context, t track, release str
 // writeFrozenWorkload writes a release's frozen workload back onto the
 // track's Workload, so GenerateRelease snapshots exactly that workload.
 func (s *Service) writeFrozenWorkload(ctx context.Context, t track, rel *gen.ComponentRelease) error {
+	if rel == nil || rel.Spec == nil {
+		return errf(CodeConflict, "the release holds no workload")
+	}
 	raw, err := json.Marshal(rel.Spec.Workload)
 	if err != nil {
 		return err
 	}
 	var spec gen.WorkloadSpec
 	if err := json.Unmarshal(raw, &spec); err != nil || spec.Container == nil {
-		return fmt.Errorf("release %q holds no usable workload", rel.Metadata.Name)
+		return errf(CodeConflict, "release %q holds no usable workload", rel.Metadata.Name)
 	}
 	cur, err := s.oc.GetComponentWorkload(ctx, ns(ctx), t.Name)
 	if err != nil {
 		return err
 	}
-	if cur == nil {
+	if cur == nil || cur.Spec == nil {
 		return errf(CodeConflict, "track %q has no workload", t.Name)
 	}
 	spec.Owner = cur.Spec.Owner

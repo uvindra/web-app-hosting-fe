@@ -495,3 +495,22 @@ func TestBuildOfRelease(t *testing.T) {
 		}
 	}
 }
+
+// TestRecutReleaseWithoutSpec: a bound release with no spec (or a track
+// without a workload spec) fails the P1 write cleanly instead of panicking.
+func TestRecutReleaseWithoutSpec(t *testing.T) {
+	e := newTestEnv(t)
+	e.addTrack("site", "site", "main", true)
+	e.deployOldRelease("run-a", "img-a")
+	e.oc.Put("componentreleases", map[string]any{"metadata": map[string]any{"name": "run-a"}})
+	_, err := e.svc.UpdateHealthCheck(e.ctx, "site", "site", "development", HealthCheck{LivenessProbe: httpProbe("/", 8080)})
+	if ae, _ := AsError(err); ae == nil || ae.Code != CodeConflict {
+		t.Fatalf("err = %v, want CONFLICT", err)
+	}
+	if err := e.svc.writeFrozenWorkload(e.ctx, track{Name: "site"}, nil); err == nil {
+		t.Fatal("nil release must fail")
+	}
+	if err := e.svc.writeFrozenWorkload(e.ctx, track{Name: "site"}, &gen.ComponentRelease{}); err == nil {
+		t.Fatal("release without spec must fail")
+	}
+}
