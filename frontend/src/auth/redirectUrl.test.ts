@@ -30,3 +30,26 @@ describe('saveRedirectUrl / getAndClearRedirectUrl', () => {
     expect(getAndClearRedirectUrl()).toBe('/organizations/default/projects');
   });
 });
+
+describe('getAndClearRedirectUrl with a configured org', () => {
+  afterEach(() => localStorage.clear());
+
+  it("moves a path saved under another org (e.g. the user's ouHandle) to the configured org", () => {
+    setOrg('');
+    saveRedirectUrl(`${window.location.origin}/organizations/amiladesilva/projects/p1/home?track=main`);
+    setOrg('default');
+    expect(getAndClearRedirectUrl()).toBe('/organizations/default/projects/p1/home?track=main');
+  });
+
+  it('leaves non-org paths alone', () => {
+    setOrg('default');
+    saveRedirectUrl(`${window.location.origin}/somewhere`);
+    expect(getAndClearRedirectUrl()).toBe('/somewhere');
+  });
+
+  it('keeps the org from the path on WSO2 Cloud (no configured org)', () => {
+    setOrg('');
+    saveRedirectUrl(`${window.location.origin}/organizations/acme/projects`);
+    expect(getAndClearRedirectUrl()).toBe('/organizations/acme/projects');
+  });
+});

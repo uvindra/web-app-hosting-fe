@@ -1,14 +1,15 @@
 import type { Org } from '../types/org';
-import { getOrgFromToken } from '../auth/tokenManager';
+import { configuredOrgHandle, getOrgFromToken } from '../auth/tokenManager';
 
 /**
- * The signed-in user's organization comes straight from the access token's claims
- * (`ouHandle` / `organization.handle`), falling back to the configured `ORG_HANDLE`
- * (local OpenChoreo tokens carry no org claims). There is no org list to fetch.
+ * The signed-in user's organization: the configured `ORG_HANDLE` when set (local OpenChoreo, whose BFF
+ * always uses that namespace), otherwise the access token's claims (`ouHandle` / `organization.handle`).
+ * There is no org list to fetch.
  */
 export async function fetchOrgs(): Promise<Org[]> {
+  const configured = configuredOrgHandle();
+  if (configured) return [{ handle: configured, numericId: 0, displayName: configured, planLabel: '' }];
   const org = getOrgFromToken();
-  const handle = org.handle ?? window.API_CONFIG.orgHandle;
-  if (!handle) return [];
-  return [{ handle, numericId: 0, displayName: org.name ?? handle, planLabel: '' }];
+  if (!org.handle) return [];
+  return [{ handle: org.handle, numericId: 0, displayName: org.name ?? org.handle, planLabel: '' }];
 }

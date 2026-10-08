@@ -19,6 +19,7 @@ import {
   getOrRefreshAsgardeoToken,
   saveOidcAuthMetadata,
   clearOidcAuthMetadata,
+  resolveOrgHandle,
 } from './tokenManager';
 
 const USER_KEY = 'user';
@@ -103,7 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
 
   // WSO2 Cloud's Platform IdP (ThunderID) issues a token whose org context is already carried in
   // its JWT claims (root-level `ouHandle`, or nested `organization.handle`) — there is no STS
-  // exchange (as in ICP cloud).
+  // exchange (as in ICP cloud). A configured ORG_HANDLE overrides it (see resolveOrgHandle).
   const handleOIDCCallback = useCallback(async (code: string) => {
     const { asgardeoClientId, asgardeoTokenEndpoint, asgardeoSignInRedirectUrl } = window.API_CONFIG;
 
@@ -133,13 +134,13 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
     let username = '';
     let displayName = '';
     let pictureUrl: string | undefined;
-    let orgHandle: string | undefined;
+    let tokenOrgHandle: string | undefined;
     try {
       const normalized = asgardeoToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
       const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
       const payload = JSON.parse(atob(padded)) as Record<string, unknown>;
       const org = (payload.organization as Record<string, unknown> | undefined) ?? {};
-      orgHandle = (org.handle as string | undefined) ?? (payload.ouHandle as string | undefined);
+      tokenOrgHandle = (org.handle as string | undefined) ?? (payload.ouHandle as string | undefined);
     } catch {
       /* ignore */
     }
@@ -155,8 +156,9 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
       }
     }
 
-    // Local OpenChoreo tokens carry no org claims: fall back to the configured org (ORG_HANDLE).
-    orgHandle = orgHandle ?? (window.API_CONFIG.orgHandle || undefined);
+    // A configured ORG_HANDLE (local OpenChoreo only) wins over the token's org: the BFF always uses that
+    // namespace, and local tokens may carry the user's own ouHandle or no org claim at all.
+    const orgHandle = resolveOrgHandle(tokenOrgHandle);
     if (!orgHandle) {
       throw new Error('Missing organization context after sign-in. Please try logging in again.');
     }

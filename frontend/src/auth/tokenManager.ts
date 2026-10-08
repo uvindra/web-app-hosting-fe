@@ -1,3 +1,5 @@
+import { withOrg } from '../paths';
+
 const ACCESS_TOKEN_KEY = 'auth_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
 const TOKEN_EXPIRES_AT_KEY = 'token_expires_at';
@@ -151,6 +153,25 @@ function isAccessTokenExpired(): boolean {
   return Date.now() >= Number(expiresAt) - EXPIRY_BUFFER_MS;
 }
 
+/** The org handle from `ORG_HANDLE` in config.json: set for the local OpenChoreo target only (WSO2 Cloud leaves it empty). */
+export function configuredOrgHandle(): string | undefined {
+  return window.API_CONFIG?.orgHandle || undefined;
+}
+
+/**
+ * The org to use for a session. A configured `ORG_HANDLE` wins over the token's org claim: locally the BFF
+ * always uses that one OpenChoreo namespace, whatever org (`ouHandle`) the signed-in user's token carries.
+ * On WSO2 Cloud nothing is configured, so the token's org is used.
+ */
+export function resolveOrgHandle(tokenOrgHandle: string | undefined): string | undefined {
+  return configuredOrgHandle() ?? (tokenOrgHandle || undefined);
+}
+
+/** The signed-in session's org (see resolveOrgHandle); also corrects sessions saved before ORG_HANDLE took precedence. */
+export function getSessionOrgHandle(): string | undefined {
+  return configuredOrgHandle() ?? (localStorage.getItem(OIDC_ORG_HANDLE_KEY) || undefined);
+}
+
 export function saveOidcAuthMetadata(orgHandle?: string): void {
   if (orgHandle) {
     localStorage.setItem(OIDC_ORG_HANDLE_KEY, orgHandle);
@@ -262,11 +283,17 @@ export function saveRedirectUrl(url: string): void {
   localStorage.setItem(REDIRECT_URL_KEY, `${target.pathname}${target.search}${target.hash}`);
 }
 
-/** Returns (and clears) the saved in-app path; ignores anything that isn't a same-app path. */
+/**
+ * Returns (and clears) the saved in-app path; ignores anything that isn't a same-app path. With a configured
+ * `ORG_HANDLE` there is only one org, so a path saved under another org (e.g. the user's `ouHandle`, from before
+ * ORG_HANDLE took precedence) is moved to the configured one.
+ */
 export function getAndClearRedirectUrl(): string | null {
   const path = localStorage.getItem(REDIRECT_URL_KEY);
   localStorage.removeItem(REDIRECT_URL_KEY);
-  return path?.startsWith('/') && !path.startsWith('//') ? path : null;
+  if (!path?.startsWith('/') || path.startsWith('//')) return null;
+  const org = configuredOrgHandle();
+  return org ? withOrg(path, org) : path;
 }
 
 export function generateAndSaveOIDCState(): string {

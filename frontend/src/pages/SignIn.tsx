@@ -3,7 +3,7 @@ import type { JSX } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { Box, CircularProgress, Typography, Button } from '@wso2/oxygen-ui';
 import { useAuth } from '../auth/AuthContext';
-import { validateAndClearOIDCState, getAndClearRedirectUrl } from '../auth/tokenManager';
+import { validateAndClearOIDCState, getAndClearRedirectUrl, getSessionOrgHandle } from '../auth/tokenManager';
 import { loginUrl, orgHomeUrl } from '../paths';
 
 /** OIDC redirect target (`ASGARDEO_SIGN_IN_REDIRECT_URL`) — exchanges the auth code for tokens. */
@@ -25,7 +25,7 @@ export default function SignIn(): JSX.Element {
     handleOIDCCallback(code)
       .then(() => {
         const redirectUrl = getAndClearRedirectUrl();
-        const orgHandle = localStorage.getItem('org_handle');
+        const orgHandle = getSessionOrgHandle();
         navigate(redirectUrl ?? (orgHandle ? orgHomeUrl(orgHandle) : loginUrl()), { replace: true });
       })
       .catch((err: Error) => setError(err.message));

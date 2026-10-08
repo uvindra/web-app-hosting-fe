@@ -20,6 +20,14 @@ export function ghAppCallbackUrl(): string {
   return '/ghapp';
 }
 
+/**
+ * Moves an in-app path (`/organizations/<org>/...?query#hash`) to another org; other paths are returned unchanged.
+ * Used when a configured ORG_HANDLE replaces an org saved in an older session or redirect.
+ */
+export function withOrg(path: string, orgHandler: string): string {
+  return path.replace(/^\/organizations\/[^/?#]+/, `/organizations/${orgHandler}`);
+}
+
 export function orgHomeUrl(orgHandler: string): string {
   return `/organizations/${orgHandler}`;
 }
