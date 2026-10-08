@@ -110,10 +110,18 @@ func (b *CloudBilling) Plan(ctx context.Context) (*PlanInfo, error) {
 	return p, nil
 }
 
-// planFromSubscription maps a billing org to a plan: paid while an active or
-// trialing subscription is on a plan whose code is not a free plan's; any
-// other state (no subscription, past due, suspended, cancelled) gates like
-// the free plan.
+// liveSubscriptionStatuses are the billing service's subscription statuses
+// that keep a product usable — the same set as its lifecycle service's
+// isLive (wso2cloud backend/billing internal/service/lifecycle): active,
+// trial, past_due (payment failed, still in the grace period) and
+// pending_cancellation (cancelled at period end, paid until then). The other
+// values (inactive, pending_activation, suspended, cancelled) are not.
+var liveSubscriptionStatuses = map[string]bool{"active": true, "trial": true, "past_due": true, "pending_cancellation": true}
+
+// planFromSubscription maps a billing org to a plan: paid while a live
+// subscription (liveSubscriptionStatuses) is on a plan whose code is not a
+// free plan's; anything else (no subscription, inactive, suspended,
+// cancelled) gates like the free plan.
 func planFromSubscription(org billingOrg, freeCodes []string) *PlanInfo {
 	p := &PlanInfo{Type: PlanFree, Name: "Free"}
 	sub := org.Subscription
@@ -135,7 +143,7 @@ func planFromSubscription(org billingOrg, freeCodes []string) *PlanInfo {
 	for _, c := range freeCodes {
 		free = free || c == sub.Plan.Code
 	}
-	if !free && (sub.Status == "active" || sub.Status == "trial") {
+	if !free && liveSubscriptionStatuses[sub.Status] {
 		p.Type = PlanPaid
 	}
 	return p

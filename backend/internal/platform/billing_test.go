@@ -15,7 +15,13 @@ func TestPlanFromSubscription(t *testing.T) {
 		{`{"subscription":{"status":"active","plan":{"code":"web-app-hosting-free","name":"Free"}}}`, PlanFree, "Free", false},
 		{`{"subscription":{"status":"active","plan":{"code":"web-app-hosting-payg","name":"Pay As You Go"}}}`, PlanPaid, "Pay As You Go", false},
 		{`{"subscription":{"status":"trial","plan":{"code":"web-app-hosting-payg","name":"Pay As You Go"},"trial":{"days_remaining":12}}}`, PlanPaid, "Pay As You Go", true},
-		{`{"subscription":{"status":"past_due","plan":{"code":"web-app-hosting-payg","name":"Pay As You Go"}}}`, PlanFree, "Pay As You Go", false},
+		{`{"subscription":{"status":"past_due","plan":{"code":"web-app-hosting-payg","name":"Pay As You Go"}}}`, PlanPaid, "Pay As You Go", false},
+		{`{"subscription":{"status":"pending_cancellation","plan":{"code":"web-app-hosting-payg","name":"Pay As You Go"}}}`, PlanPaid, "Pay As You Go", false},
+		{`{"subscription":{"status":"trialing","plan":{"code":"web-app-hosting-payg","name":"Pay As You Go"}}}`, PlanFree, "Pay As You Go", false},
+		{`{"subscription":{"status":"inactive","plan":{"code":"web-app-hosting-payg","name":"Pay As You Go"}}}`, PlanFree, "Pay As You Go", false},
+		{`{"subscription":{"status":"pending_activation","plan":{"code":"web-app-hosting-payg","name":"Pay As You Go"}}}`, PlanFree, "Pay As You Go", false},
+		{`{"subscription":{"status":"suspended","plan":{"code":"web-app-hosting-payg","name":"Pay As You Go"}}}`, PlanFree, "Pay As You Go", false},
+		{`{"subscription":{"status":"trial","plan":{"code":"web-app-hosting-free","name":"Free"},"trial":{"days_remaining":3}}}`, PlanFree, "Free", true},
 		{`{"subscription":{"status":"cancelled","plan":{"code":"web-app-hosting-enterprise","name":"Enterprise"}}}`, PlanFree, "Enterprise", false},
 	}
 	for _, c := range cases {
