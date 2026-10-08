@@ -33,19 +33,21 @@ import (
 
 // Default retry configuration values.
 const (
-	DefaultRetryWaitMin     = 1 * time.Second
-	DefaultRetryWaitMax     = 10 * time.Second
-	DefaultRetryAttemptsMax = 3
-	DefaultAttemptTimeout   = 30 * time.Second
+	// Worst case for one call: 3 attempts x 15s plus ~3s of backoff, inside
+	// the 60s inbound REQUEST_TIMEOUT (previously 4 x 30s, past it).
+	DefaultRetryWaitMin     = 500 * time.Millisecond
+	DefaultRetryWaitMax     = 4 * time.Second
+	DefaultRetryAttemptsMax = 2
+	DefaultAttemptTimeout   = 15 * time.Second
 )
 
 // TransientHTTPErrorCodes are statuses worth retrying for non-idempotent
-// operations (everything except GET/DELETE).
+// operations (everything except GET/DELETE). 504 is not retried for those:
+// the upstream may have applied the write, and a retry would then conflict.
 var TransientHTTPErrorCodes = []int{
 	http.StatusTooManyRequests,
 	http.StatusBadGateway,
 	http.StatusServiceUnavailable,
-	http.StatusGatewayTimeout,
 }
 
 // TransientHTTPGETErrorCodes adds 500 for idempotent ops.

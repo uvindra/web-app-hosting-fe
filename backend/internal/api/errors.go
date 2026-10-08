@@ -65,6 +65,9 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	if errors.As(err, &apiErr) {
 		msg = apiErr.Message
 	}
+	if code == "UPSTREAM_TIMEOUT" {
+		msg = "The platform did not respond in time. Please try again in a moment."
+	}
 	if code == string(webapp.CodeQuotaExceeded) && msg == "" {
 		msg = "Quota reached — upgrade your plan to create more deployment tracks."
 	}

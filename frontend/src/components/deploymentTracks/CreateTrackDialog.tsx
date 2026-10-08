@@ -13,7 +13,7 @@ interface CreateTrackDialogProps {
 }
 
 function BranchPicker({ webAppId, trackedBranches, value, onChange }: { webAppId: string; trackedBranches: string[]; value: string; onChange: (branch: string) => void }): JSX.Element {
-  const { data: branches, isLoading, isError, refetch } = useRepoBranches(webAppId);
+  const { data: branches, isLoading, isError, error, refetch } = useRepoBranches(webAppId);
 
   if (isLoading) {
     return (
@@ -26,7 +26,7 @@ function BranchPicker({ webAppId, trackedBranches, value, onChange }: { webAppId
   if (isError || !branches) {
     return (
       <Alert severity="error" action={<Button onClick={() => void refetch()}>Retry</Button>}>
-        Failed to load the repository's branches.
+        Failed to load the repository&apos;s branches.{error instanceof Error && error.message ? ` ${error.message}` : ''}
       </Alert>
     );
   }
@@ -54,7 +54,7 @@ export default function CreateTrackDialog({ webAppId, trackedBranches, onClose, 
 
   const handleCreate = () => {
     setError(null);
-    create.mutate({ branch }, { onSuccess: () => onDone(`Deployment track created for branch "${branch}".`), onError: (e) => setError(e) });
+    create.mutate({ branch }, { onSuccess: () => onDone(`Deployment track created for branch "${branch}". Its first build is starting.`), onError: (e) => setError(e) });
   };
 
   return (

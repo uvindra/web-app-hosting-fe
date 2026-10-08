@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { checkDeploymentTrackDeletable, createDeploymentTrack, deleteDeploymentTrack, fetchDeploymentTracks, fetchRepoBranches, updateAutoDeploy } from '../api/deploymentTracks';
 import type { CreateDeploymentTrackInput } from '../types/deploymentTracks';
+import { HttpError } from '../types/http';
 
 const key = (webAppId: string) => ['deploymentTracks', webAppId];
 
@@ -9,7 +10,14 @@ export function useDeploymentTracks(webAppId: string) {
 }
 
 export function useRepoBranches(webAppId: string) {
-  return useQuery({ queryKey: ['repoBranches', webAppId], queryFn: () => fetchRepoBranches(webAppId), enabled: !!webAppId });
+  return useQuery({
+    queryKey: ['repoBranches', webAppId],
+    queryFn: () => fetchRepoBranches(webAppId),
+    enabled: !!webAppId,
+    staleTime: 60_000,
+    // A GitHub rate limit (BFF 429 GIT_RATE_LIMITED) won't clear on a quick retry.
+    retry: (failures, err) => !(err instanceof HttpError && err.status === 429) && failures < 2,
+  });
 }
 
 export function useCreateDeploymentTrack(webAppId: string) {

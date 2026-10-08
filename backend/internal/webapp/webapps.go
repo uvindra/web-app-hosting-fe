@@ -3,7 +3,6 @@ package webapp
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sort"
 	"strings"
 
@@ -154,12 +153,6 @@ func (s *Service) CreateWebApp(ctx context.Context, projectID string, in CreateW
 	if branch == "" {
 		branch = "main"
 	}
-	if _, err := s.GetProject(ctx, projectID); err != nil {
-		return nil, err
-	}
-	if existing, _ := s.oc.ListComponents(ctx, ns(ctx), "", LabelWebApp+"="+in.Handler); len(existing) > 0 {
-		return nil, errf(CodeConflict, "a web app named %q already exists", in.Handler)
-	}
 	port := RuntimePort(preset, in.Port)
 	wf, err := WorkflowFor(BuildSpec{
 		Preset: preset, RepoURL: repoURL, Branch: branch, AppPath: in.ComponentDirectory,
@@ -168,7 +161,22 @@ func (s *Service) CreateWebApp(ctx context.Context, projectID string, in CreateW
 	if err != nil {
 		return nil, errf(CodeBadRequest, "%s", err.Error())
 	}
-	if err := s.EnsurePlatformResources(ctx); err != nil {
+	// Independent pre-checks run concurrently: the project exists, the name
+	// is free, and our platform resources are in place (cached per process).
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error { _, err := s.getProject(gctx, projectID); return err })
+	g.Go(func() error {
+		existing, err := s.oc.ListComponents(gctx, ns(gctx), "", LabelWebApp+"="+in.Handler)
+		if err != nil {
+			return err
+		}
+		if len(existing) > 0 {
+			return errf(CodeConflict, "a web app named %q already exists", in.Handler)
+		}
+		return nil
+	})
+	g.Go(func() error { return s.EnsurePlatformResources(gctx) })
+	if err := g.Wait(); err != nil {
 		return nil, err
 	}
 	comp, err := s.createTrackComponent(ctx, projectID, trackSpec{
@@ -184,9 +192,7 @@ func (s *Service) CreateWebApp(ctx context.Context, projectID string, in CreateW
 	if err := s.p.Git.BindSource(ctx, t.repoRef(), projectID, t.Name); err != nil {
 		return nil, fmt.Errorf("web app created but binding the git source failed: %w", err)
 	}
-	if _, err := s.TriggerBuild(ctx, in.Handler, t.Name, ""); err != nil {
-		slog.WarnContext(ctx, "first build failed to start", "webApp", in.Handler, "error", err)
-	}
+	s.firstBuild(ctx, in.Handler, t.Name)
 	w := s.toWebApp([]track{t}, nil, nil, nil)
 	return &w, nil
 }

@@ -3,8 +3,8 @@ package api
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -29,6 +29,12 @@ type fakePAS struct {
 	quotaFull  bool
 	// gets counts GET requests by path (query stripped).
 	gets map[string]int
+	// svc is the service under test (set by newTestServer).
+	svc *webapp.Service
+	// runDelay slows down WorkflowRun creation (a loaded cluster).
+	runDelay time.Duration
+	// ghRateLimited makes the fake GitHub answer every call with a rate limit.
+	ghRateLimited bool
 }
 
 // resetGets clears the GET counters.
@@ -57,6 +63,9 @@ type recorded struct {
 }
 
 func (f *fakePAS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/workflowruns") && f.runDelay > 0 {
+		time.Sleep(f.runDelay)
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var body map[string]any
@@ -146,6 +155,11 @@ func newTestServer(t *testing.T, pas *fakePAS) (*httptest.Server, *httptest.Serv
 	t.Helper()
 	ocSrv := httptest.NewServer(pas)
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if pas.ghRateLimited {
+			w.Header().Set("X-RateLimit-Remaining", "0")
+			writeJSON(w, 403, map[string]any{"message": "API rate limit exceeded"})
+			return
+		}
 		if strings.HasSuffix(r.URL.Path, "/branches") {
 			writeJSON(w, 200, []any{map[string]any{"name": "main"}, map[string]any{"name": "b1"}, map[string]any{"name": "b2"}, map[string]any{"name": "b3"}, map[string]any{"name": "b4"}})
 			return
@@ -165,6 +179,7 @@ func newTestServer(t *testing.T, pas *fakePAS) (*httptest.Server, *httptest.Serv
 		Git: &platform.PublicGitHub{APIURL: gh.URL},
 	}
 	svc := webapp.New(oc, pl, webapp.Options{Profile: platformres.Profile{}, DefaultProject: "default", WatchInterval: time.Hour})
+	pas.svc = svc
 	api := httptest.NewServer((&Server{BasePath: "/webapp-hosting/api/v1", Service: svc, Auth: DevAuthenticator{}, Orgs: pl.Org}).Handler())
 	t.Cleanup(func() { api.Close(); ocSrv.Close(); gh.Close() })
 	return api, ocSrv
@@ -211,6 +226,7 @@ func TestCreateWebAppFlow(t *testing.T) {
 	if code != 201 || obj["id"] != "site" || obj["defaultTrackId"] != "site" || obj["framework"] != "React" {
 		t.Fatalf("create: %d %v", code, obj)
 	}
+	pas.svc.WaitBackground() // the first build starts in the background
 
 	pas.mu.Lock()
 	defer pas.mu.Unlock()
@@ -333,7 +349,7 @@ func TestListCallsAreConstant(t *testing.T) {
 				t.Fatalf("create track: %d %v", code, obj)
 			}
 		}
-		waitBackground(t, srv)
+		pas.svc.WaitBackground()
 		count := func(path string, n int) int {
 			pas.resetGets()
 			code, _, arr := call(t, srv, "GET", path, nil)
@@ -356,7 +372,46 @@ func TestListCallsAreConstant(t *testing.T) {
 	}
 }
 
-// waitBackground waits for the service's background follow-up work (first builds).
-func waitBackground(t *testing.T, _ *httptest.Server) {
-	t.Helper()
+// TestCreateReturnsBeforeFirstBuild: web app and track creation answer 201 as
+// soon as the Component exists; the first build follows in the background,
+// and a rate-limited GitHub doesn't block track creation.
+func TestCreateReturnsBeforeFirstBuild(t *testing.T) {
+	pas := &fakePAS{runDelay: 400 * time.Millisecond}
+	srv, _ := newTestServer(t, pas)
+	call(t, srv, "GET", "/projects", nil)
+
+	start := time.Now()
+	if code, obj, _ := call(t, srv, "POST", "/projects/default/webapps", createInput); code != 201 {
+		t.Fatalf("create: %d %v", code, obj)
+	}
+	if d := time.Since(start); d > 300*time.Millisecond {
+		t.Fatalf("web app create waited for the first build: %s", d)
+	}
+	pas.mu.Lock()
+	pas.ghRateLimited = true
+	pas.mu.Unlock()
+	start = time.Now()
+	code, obj, _ := call(t, srv, "POST", "/webapps/site/tracks", map[string]any{"branch": "b1"})
+	if code != 201 || obj["id"] != "site-b1" {
+		t.Fatalf("create track: %d %v", code, obj)
+	}
+	if d := time.Since(start); d > 300*time.Millisecond {
+		t.Fatalf("track create waited for the first build: %s", d)
+	}
+	// Branch lookups surface the rate limit as 429 GIT_RATE_LIMITED.
+	if code, obj, _ := call(t, srv, "GET", "/webapps/site/branches", nil); code != 429 || obj["code"] != "GIT_RATE_LIMITED" {
+		t.Fatalf("branches: %d %v", code, obj)
+	}
+	pas.svc.WaitBackground()
+	pas.mu.Lock()
+	defer pas.mu.Unlock()
+	runs := map[string]bool{}
+	for _, w := range pas.writes {
+		if w.Method == "POST" && strings.HasSuffix(w.Path, "/workflowruns") {
+			runs[w.Body["metadata"].(map[string]any)["labels"].(map[string]any)["openchoreo.dev/component"].(string)] = true
+		}
+	}
+	if !runs["site"] || !runs["site-b1"] {
+		t.Fatalf("first builds = %v", runs)
+	}
 }

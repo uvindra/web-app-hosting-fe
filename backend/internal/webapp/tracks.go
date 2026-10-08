@@ -4,13 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/wso2/web-app-hosting/backend/internal/auth"
 	"github.com/wso2/web-app-hosting/backend/internal/openchoreo"
 	"github.com/wso2/web-app-hosting/backend/internal/openchoreo/gen"
 	"github.com/wso2/web-app-hosting/backend/internal/platform"
@@ -216,12 +219,8 @@ func (s *Service) CreateTrack(ctx context.Context, webAppID, branch string) (*De
 		}
 	}
 	def := tracks[0]
-	branches, err := s.p.Git.ListBranches(ctx, def.repoRef())
-	if err != nil {
-		return nil, fmt.Errorf("list repository branches: %w", err)
-	}
-	if !slices.Contains(branches, branch) {
-		return nil, errf(CodeBadRequest, "branch %q was not found in the repository", branch)
+	if err := s.checkBranch(ctx, def.repoRef(), branch); err != nil {
+		return nil, err
 	}
 	if err := s.EnsurePlatformResources(ctx); err != nil {
 		return nil, err
@@ -238,13 +237,53 @@ func (s *Service) CreateTrack(ctx context.Context, webAppID, branch string) (*De
 	}
 	t := trackOf(*comp)
 	if err := s.p.Git.BindSource(ctx, t.repoRef(), t.Project, t.Name); err != nil {
-		return nil, fmt.Errorf("bind git source: %w", err)
+		return nil, fmt.Errorf("track created but binding the git source failed: %w", err)
 	}
-	if _, err := s.TriggerBuild(ctx, webAppID, t.Name, ""); err != nil {
-		return nil, fmt.Errorf("track created but the first build failed to start: %w", err)
-	}
+	s.firstBuild(ctx, webAppID, t.Name)
 	return &DeploymentTrack{ID: t.Name, Branch: branch, AutoDeploy: false, CreatedAt: ts(comp.Metadata.CreationTimestamp)}, nil
 }
+
+// checkBranch rejects a branch the repository doesn't have. The branch list
+// is a (cached) Git provider read; when the provider is unavailable (e.g.
+// rate-limited) the check is skipped rather than blocking track creation —
+// the first build then reports a bad branch.
+func (s *Service) checkBranch(ctx context.Context, repo platform.RepoRef, branch string) error {
+	branches, err := s.p.Git.ListBranches(ctx, repo)
+	switch {
+	case err == nil:
+		if !slices.Contains(branches, branch) {
+			return errf(CodeBadRequest, "branch %q was not found in the repository", branch)
+		}
+		return nil
+	case errors.Is(err, openchoreo.ErrNotFound):
+		return errf(CodeBadRequest, "the repository %s was not found or is not accessible", repo.URL)
+	default:
+		slog.WarnContext(ctx, "could not list branches; skipping the branch check", "repo", repo.URL, "branch", branch, "error", err)
+		return nil
+	}
+}
+
+// firstBuildTimeout bounds a background first build's upstream calls.
+const firstBuildTimeout = 2 * time.Minute
+
+// firstBuild starts a new track's first build in the background, so creating
+// a web app or track returns as soon as its Component exists. A failure is
+// logged; the user can start the build from the Build page.
+func (s *Service) firstBuild(ctx context.Context, webAppID, trackID string) {
+	bctx := auth.Detached(ctx)
+	s.async.Add(1)
+	go func() {
+		defer s.async.Done()
+		ctx, cancel := context.WithTimeout(bctx, firstBuildTimeout)
+		defer cancel()
+		if _, err := s.TriggerBuild(ctx, webAppID, trackID, ""); err != nil {
+			slog.Error("first build failed to start", "webApp", webAppID, "track", trackID, "error", err)
+		}
+	}()
+}
+
+// WaitBackground blocks until background follow-up work (first builds) is done (tests).
+func (s *Service) WaitBackground() { s.async.Wait() }
 
 func withBranch(params map[string]any, branch string) map[string]any {
 	out := deepCopy(params).(map[string]any)

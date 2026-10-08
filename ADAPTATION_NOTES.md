@@ -150,6 +150,18 @@ one card per pipeline environment) — no registry, no plugin indirection.
     (`Options.EnvCacheTTL`). Track pages (builds, deployments, environments, URLs, runtime) read the track, its bindings
     and runs concurrently. Existence checks no longer list every component for a web app count.
   - Release-binding lists now follow pagination.
+- **Slow track / web app create (~22s, 500 after ~40s under load):** `POST /webapps/{w}/tracks` listed every branch
+  from GitHub, created the Component, then synchronously started the first build (another GitHub read, build
+  credentials, WorkflowRun create), each OC call allowed 4 x 30s attempts.
+  - Both creates now answer 201 as soon as the Component exists; the first build starts in the background
+    (`Service.firstBuild`, detached service identity, 2 min bound). Web app create runs its pre-checks (project,
+    name free, platform resources) concurrently.
+  - The track's branch check uses the cached branch list and is skipped (logged) when GitHub is unavailable or
+    rate-limited, instead of failing the create.
+  - OpenChoreo retries: 3 attempts x 15s (was 4 x 30s, past the 60s request timeout); 504 is no longer retried
+    for writes. A timeout answers `504 UPSTREAM_TIMEOUT` with a readable message.
+  - Console: the create-track dialog shows the BFF's message for branch-list failures and says the first build is
+    starting; branch lists are kept for 60s and not retried on 429.
 
 ### 2026-10-08 — Fix post-login redirect
 
