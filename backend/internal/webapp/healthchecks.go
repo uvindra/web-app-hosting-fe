@@ -235,15 +235,7 @@ func probeFromK8s(v any) *Probe {
 	if !ok {
 		return nil
 	}
-	num := func(k string, def int) int {
-		if f, ok := m[k].(float64); ok {
-			return int(f)
-		}
-		if i, ok := m[k].(int); ok {
-			return i
-		}
-		return def
-	}
+	num := func(k string, def int) int { return intOr(m[k], def) }
 	p := &Probe{
 		InitialDelaySeconds: num("initialDelaySeconds", 0), PeriodSeconds: num("periodSeconds", 10), TimeoutSeconds: num("timeoutSeconds", 1),
 		FailureThreshold: num("failureThreshold", 3), SuccessThreshold: num("successThreshold", 1),
@@ -285,12 +277,15 @@ func probeFromK8s(v any) *Probe {
 	return p
 }
 
-func intOf(v any) int {
+func intOf(v any) int { return intOr(v, 0) }
+
+// intOr reads a JSON (float64) or Go int number, else def.
+func intOr(v any, def int) int {
 	switch n := v.(type) {
 	case float64:
 		return int(n)
 	case int:
 		return n
 	}
-	return 0
+	return def
 }

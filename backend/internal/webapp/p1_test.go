@@ -514,3 +514,14 @@ func TestRecutReleaseWithoutSpec(t *testing.T) {
 		t.Fatal("release without spec must fail")
 	}
 }
+
+func TestIntOr(t *testing.T) {
+	if intOr(3.0, 9) != 3 || intOr(4, 9) != 4 || intOr("5", 9) != 9 || intOr(nil, 9) != 9 || intOf(nil) != 0 {
+		t.Fatal("intOr")
+	}
+	// Absent timings take the Kubernetes defaults.
+	p := probeFromK8s(map[string]any{"tcpSocket": map[string]any{"port": 8080.0}})
+	if p == nil || p.PeriodSeconds != 10 || p.TimeoutSeconds != 1 || p.FailureThreshold != 3 || p.SuccessThreshold != 1 || p.TCPSocket.Port != 8080 {
+		t.Fatalf("probe = %+v", p)
+	}
+}
