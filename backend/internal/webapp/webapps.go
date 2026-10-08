@@ -32,6 +32,9 @@ func (s *Service) ListWebApps(ctx context.Context, projectID string) ([]WebApp, 
 	idx := indexBindings(bindings)
 	byApp := map[string][]track{}
 	for _, c := range comps {
+		if deleting(c) {
+			continue
+		}
 		t := trackOf(c)
 		byApp[t.WebApp] = append(byApp[t.WebApp], t)
 	}

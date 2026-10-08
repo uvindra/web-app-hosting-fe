@@ -113,7 +113,7 @@ func (s *Service) webAppCounts(ctx context.Context) (map[string]int, error) {
 	}
 	seen := map[string]map[string]bool{}
 	for _, c := range comps {
-		if c.Spec == nil {
+		if c.Spec == nil || deleting(c) {
 			continue
 		}
 		p := c.Spec.Owner.ProjectName

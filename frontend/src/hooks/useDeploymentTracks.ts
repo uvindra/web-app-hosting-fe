@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { checkDeploymentTrackDeletable, createDeploymentTrack, deleteDeploymentTrack, fetchDeploymentTracks, fetchRepoBranches, updateAutoDeploy } from '../api/deploymentTracks';
-import type { CreateDeploymentTrackInput } from '../types/deploymentTracks';
+import type { CreateDeploymentTrackInput, DeploymentTrack } from '../types/deploymentTracks';
 import { HttpError } from '../types/http';
 
 const key = (webAppId: string) => ['deploymentTracks', webAppId];
@@ -24,7 +24,11 @@ export function useCreateDeploymentTrack(webAppId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateDeploymentTrackInput) => createDeploymentTrack(webAppId, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: key(webAppId) }),
+    onSuccess: (created) => {
+      // Show the new row straight away; the refetch then brings the server's view.
+      qc.setQueryData<DeploymentTrack[]>(key(webAppId), (tracks) => (tracks && !tracks.some((t) => t.id === created.id) ? [...tracks, created] : tracks));
+      void qc.invalidateQueries({ queryKey: key(webAppId) });
+    },
   });
 }
 
@@ -36,7 +40,12 @@ export function useDeleteDeploymentTrack(webAppId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (trackId: string) => deleteDeploymentTrack(webAppId, trackId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: key(webAppId) }),
+    onSuccess: (_, trackId) => {
+      // OpenChoreo deletes asynchronously, so drop the row now rather than wait for the refetch (the BFF also
+      // hides Components that are being deleted). Not awaited: the mutation settles without waiting for it.
+      qc.setQueryData<DeploymentTrack[]>(key(webAppId), (tracks) => tracks?.filter((t) => t.id !== trackId));
+      void qc.invalidateQueries({ queryKey: key(webAppId) });
+    },
   });
 }
 

@@ -439,3 +439,32 @@ func TestCreateDockerWebAppUsesDockerFields(t *testing.T) {
 		t.Fatalf("escaping dockerfile: %d %v", code, obj)
 	}
 }
+
+// TestDeletingTracksAreHidden: OpenChoreo deletes Components asynchronously
+// (they stay listed with a deletionTimestamp until finalizers run), so a
+// deleted track must not come back in the track list or lookups.
+func TestDeletingTracksAreHidden(t *testing.T) {
+	pas := &fakePAS{}
+	srv, _ := newTestServer(t, pas)
+	call(t, srv, "GET", "/projects", nil)
+	if code, obj, _ := call(t, srv, "POST", "/projects/default/webapps", createInput); code != 201 {
+		t.Fatalf("create: %d %v", code, obj)
+	}
+	if code, obj, _ := call(t, srv, "POST", "/webapps/site/tracks", map[string]any{"branch": "b1"}); code != 201 {
+		t.Fatalf("create track: %d %v", code, obj)
+	}
+	pas.svc.WaitBackground()
+	pas.mu.Lock()
+	for _, c := range pas.components {
+		if md := c["metadata"].(map[string]any); md["name"] == "site-b1" {
+			md["deletionTimestamp"] = time.Now().UTC().Format(time.RFC3339)
+		}
+	}
+	pas.mu.Unlock()
+	if code, _, arr := call(t, srv, "GET", "/webapps/site/tracks", nil); code != 200 || len(arr) != 1 || arr[0].(map[string]any)["id"] != "site" {
+		t.Fatalf("tracks: %d %v", code, arr)
+	}
+	if code, obj, _ := call(t, srv, "GET", "/webapps/site/tracks/site-b1/build-config", nil); code != 404 {
+		t.Fatalf("deleting track lookup: %d %v", code, obj)
+	}
+}

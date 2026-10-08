@@ -22,17 +22,18 @@ export default function TrackDeleteButton({ webAppId, track, onResult }: TrackDe
       onError: (e) => onResult({ type: 'error', message: e instanceof Error ? e.message : 'Could not check whether the track can be deleted.' }),
     });
 
-  const confirmDelete = () =>
-    del.mutate(track.id, {
-      onSuccess: () => {
-        setConfirming(false);
-        onResult({ type: 'success', message: `Deployment track for branch "${track.branch}" deleted.` });
-      },
-      onError: (e) => {
-        setConfirming(false);
-        onResult({ type: 'error', message: e instanceof Error ? e.message : 'Delete failed.' });
-      },
-    });
+  // mutateAsync, not mutate + callbacks: the row (and this component) unmounts as soon as the track leaves the
+  // cache, and per-call mutate callbacks don't fire after unmount, so the success alert would be lost.
+  const confirmDelete = async () => {
+    try {
+      await del.mutateAsync(track.id);
+      onResult({ type: 'success', message: `Deployment track for branch "${track.branch}" deleted.` });
+    } catch (e) {
+      onResult({ type: 'error', message: e instanceof Error ? e.message : 'Delete failed.' });
+    } finally {
+      setConfirming(false);
+    }
+  };
 
   return (
     <>
@@ -55,7 +56,7 @@ export default function TrackDeleteButton({ webAppId, track, onResult }: TrackDe
             <Button onClick={() => setConfirming(false)} disabled={del.isPending}>
               Cancel
             </Button>
-            <Button variant="contained" color="error" onClick={confirmDelete} disabled={del.isPending} startIcon={del.isPending ? <CircularProgress size={16} color="inherit" /> : undefined}>
+            <Button variant="contained" color="error" onClick={() => void confirmDelete()} disabled={del.isPending} startIcon={del.isPending ? <CircularProgress size={16} color="inherit" /> : undefined}>
               Delete
             </Button>
           </DialogActions>

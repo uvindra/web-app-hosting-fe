@@ -111,7 +111,12 @@ func (s *Service) webAppTracks(ctx context.Context, webAppID string) ([]track, e
 	}
 	out := make([]track, 0, len(comps))
 	for _, c := range comps {
-		out = append(out, trackOf(c))
+		if !deleting(c) {
+			out = append(out, trackOf(c))
+		}
+	}
+	if len(out) == 0 {
+		return nil, errf(CodeNotFound, "web app %q not found", webAppID)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].IsDefault != out[j].IsDefault {
@@ -122,6 +127,12 @@ func (s *Service) webAppTracks(ctx context.Context, webAppID string) ([]track, e
 	return out, nil
 }
 
+// deleting reports whether OpenChoreo is already removing the Component.
+// Deletion is asynchronous: the Component stays listed, with a
+// deletionTimestamp, until its finalizers finish, so lists and lookups skip it
+// (a deleted track must not reappear in the console's refetch).
+func deleting(c gen.Component) bool { return c.Metadata.DeletionTimestamp != nil }
+
 // getTrack returns one track and checks it belongs to the web app.
 func (s *Service) getTrack(ctx context.Context, webAppID, trackID string) (*track, error) {
 	c, err := s.oc.GetComponent(ctx, ns(ctx), trackID)
@@ -130,6 +141,9 @@ func (s *Service) getTrack(ctx context.Context, webAppID, trackID string) (*trac
 			return nil, errf(CodeNotFound, "deployment track %q not found", trackID)
 		}
 		return nil, err
+	}
+	if deleting(*c) {
+		return nil, errf(CodeNotFound, "deployment track %q not found", trackID)
 	}
 	t := trackOf(*c)
 	if t.WebApp != webAppID {
