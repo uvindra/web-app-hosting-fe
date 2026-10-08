@@ -141,6 +141,15 @@ one card per pipeline environment) — no registry, no plugin indirection.
     map to `429 GIT_RATE_LIMITED` (message says when it resets), not a bare 403. Upstream timeouts map to `504 UPSTREAM_TIMEOUT`.
   - Build page: the Latest Commit card degrades on its own ("Couldn't load the latest commit" + Retry; Build Latest
     then builds the branch head) instead of failing the whole page.
+- **BFF list endpoints (N+1):** `GET /projects/{p}/webapps` read one ReleaseBinding list per web app and
+  `GET /webapps/{w}/tracks` one per track, all sequentially, after 3 sequential pipeline reads.
+  - List endpoints now read components, environments and the namespace's release bindings once each, concurrently
+    (`errgroup`), and join in memory: `/webapps` = 5 upstream GETs, `/projects` = 2, `/tracks` = 2, whatever the item
+    count (`TestListCallsAreConstant` counts calls on a fake upstream).
+  - Pipeline environments (environment list + project + pipeline, read concurrently) are cached for 30s
+    (`Options.EnvCacheTTL`). Track pages (builds, deployments, environments, URLs, runtime) read the track, its bindings
+    and runs concurrently. Existence checks no longer list every component for a web app count.
+  - Release-binding lists now follow pagination.
 
 ### 2026-10-08 — Fix post-login redirect
 

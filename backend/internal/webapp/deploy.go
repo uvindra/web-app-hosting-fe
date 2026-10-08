@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/wso2/web-app-hosting/backend/internal/openchoreo/gen"
 )
@@ -91,19 +94,23 @@ func releaseOf(b gen.ReleaseBinding) string {
 
 // ProjectEnvironments returns the project's pipeline environments.
 func (s *Service) ProjectEnvironments(ctx context.Context, projectID string) ([]Environment, error) {
-	if _, err := s.GetProject(ctx, projectID); err != nil {
+	var envs []Environment
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error { _, err := s.getProject(gctx, projectID); return err })
+	g.Go(func() (err error) { envs, err = s.pipelineEnvironments(gctx, projectID); return })
+	if err := g.Wait(); err != nil {
 		return nil, err
 	}
-	return s.pipelineEnvironments(ctx, projectID)
+	return envs, nil
 }
 
 // Environments returns the per-environment deployment summary of a track.
 func (s *Service) Environments(ctx context.Context, webAppID, trackID string) ([]EnvironmentDeployment, error) {
-	t, err := s.getTrack(ctx, webAppID, trackID)
+	t, bindings, _, err := s.trackState(ctx, webAppID, trackID, false)
 	if err != nil {
 		return nil, err
 	}
-	envs, bindings, err := s.envBindings(ctx, *t)
+	envs, err := s.pipelineEnvironments(ctx, t.Project)
 	if err != nil {
 		return nil, err
 	}
@@ -118,40 +125,45 @@ func (s *Service) Environments(ctx context.Context, webAppID, trackID string) ([
 	return out, nil
 }
 
-func (s *Service) envBindings(ctx context.Context, t track) ([]Environment, map[string]gen.ReleaseBinding, error) {
-	envs, err := s.pipelineEnvironments(ctx, t.Project)
-	if err != nil {
-		return nil, nil, err
+// trackState reads a track together with its bindings (by environment) and,
+// when withRuns, its runs (newest first) — concurrently, since all are keyed
+// by the track (Component) name.
+func (s *Service) trackState(ctx context.Context, webAppID, trackID string, withRuns bool) (*track, map[string]gen.ReleaseBinding, []gen.WorkflowRun, error) {
+	var (
+		t     *track
+		list  []gen.ReleaseBinding
+		runs  []gen.WorkflowRun
+		runsE error
+	)
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() (err error) { t, err = s.getTrack(gctx, webAppID, trackID); return })
+	g.Go(func() (err error) { list, err = s.oc.ListReleaseBindings(gctx, ns(gctx), trackID); return })
+	if withRuns {
+		g.Go(func() error { runs, runsE = s.listRuns(gctx, trackID); return nil })
 	}
-	list, err := s.oc.ListReleaseBindings(ctx, ns(ctx), t.Name)
-	if err != nil {
-		return nil, nil, err
+	if err := g.Wait(); err != nil {
+		return nil, nil, nil, err
 	}
-	m := map[string]gen.ReleaseBinding{}
-	for _, b := range list {
-		if b.Spec != nil && b.Spec.Owner.ComponentName == t.Name {
-			m[b.Spec.Environment] = b
-		}
+	if runsE != nil {
+		slog.WarnContext(ctx, "could not list builds", "track", trackID, "error", runsE)
 	}
-	return envs, m, nil
+	return t, indexBindings(list)[t.Name], runs, nil
 }
 
 // Deployments lists the current deployment of the track in each environment
 // (stateless P0: no history beyond the current binding).
 func (s *Service) Deployments(ctx context.Context, webAppID, trackID string) ([]Deployment, error) {
-	t, err := s.getTrack(ctx, webAppID, trackID)
+	t, bindings, list, err := s.trackState(ctx, webAppID, trackID, true)
 	if err != nil {
 		return nil, err
 	}
-	envs, bindings, err := s.envBindings(ctx, *t)
+	envs, err := s.pipelineEnvironments(ctx, t.Project)
 	if err != nil {
 		return nil, err
 	}
 	runs := map[string]gen.WorkflowRun{}
-	if list, err := s.listRuns(ctx, t.Name); err == nil {
-		for _, r := range list {
-			runs[r.Metadata.Name] = r
-		}
+	for _, r := range list {
+		runs[r.Metadata.Name] = r
 	}
 	var out []Deployment
 	for _, e := range envs {

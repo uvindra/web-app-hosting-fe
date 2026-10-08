@@ -5,6 +5,8 @@ import (
 	"errors"
 	"sort"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/wso2/web-app-hosting/backend/internal/openchoreo"
 	"github.com/wso2/web-app-hosting/backend/internal/openchoreo/gen"
 )
@@ -15,8 +17,14 @@ const webAppSelector = LabelWebApp // label-exists selector
 // it creates the default project, as ICP does.
 func (s *Service) ListProjects(ctx context.Context) ([]Project, error) {
 	n := ns(ctx)
-	projects, err := s.oc.ListProjects(ctx, n)
-	if err != nil {
+	var (
+		projects []gen.Project
+		counts   map[string]int
+	)
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() (err error) { projects, err = s.oc.ListProjects(gctx, n); return })
+	g.Go(func() (err error) { counts, err = s.webAppCounts(gctx); return })
+	if err := g.Wait(); err != nil {
 		return nil, err
 	}
 	if len(projects) == 0 && s.opts.DefaultProject != "" {
@@ -28,10 +36,6 @@ func (s *Service) ListProjects(ctx context.Context) ([]Project, error) {
 			projects = append(projects, *p)
 		}
 	}
-	counts, err := s.webAppCounts(ctx)
-	if err != nil {
-		return nil, err
-	}
 	out := make([]Project, 0, len(projects))
 	for _, p := range projects {
 		out = append(out, toProject(p, counts[p.Metadata.Name]))
@@ -42,6 +46,23 @@ func (s *Service) ListProjects(ctx context.Context) ([]Project, error) {
 
 // GetProject returns one project.
 func (s *Service) GetProject(ctx context.Context, id string) (*Project, error) {
+	var (
+		p      *gen.Project
+		counts map[string]int
+	)
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() (err error) { p, err = s.getProject(gctx, id); return })
+	g.Go(func() (err error) { counts, err = s.webAppCounts(gctx); return })
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+	out := toProject(*p, counts[id])
+	return &out, nil
+}
+
+// getProject reads one project (NOT_FOUND when missing), without the
+// web app count: use it for existence checks.
+func (s *Service) getProject(ctx context.Context, id string) (*gen.Project, error) {
 	p, err := s.oc.GetProject(ctx, ns(ctx), id)
 	if err != nil {
 		if notFound(err) {
@@ -49,12 +70,7 @@ func (s *Service) GetProject(ctx context.Context, id string) (*Project, error) {
 		}
 		return nil, err
 	}
-	counts, err := s.webAppCounts(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := toProject(*p, counts[id])
-	return &out, nil
+	return p, nil
 }
 
 // CreateProject creates a project on the namespace's default pipeline.

@@ -392,15 +392,29 @@ func (c *Client) GetComponentRelease(ctx context.Context, ns, name string) (*gen
 	return r.JSON200, nil
 }
 
+// ListReleaseBindings lists a component's bindings ("" = every binding in the namespace).
 func (c *Client) ListReleaseBindings(ctx context.Context, ns, component string) ([]gen.ReleaseBinding, error) {
-	r, err := c.oc.ListReleaseBindingsWithResponse(ctx, ns, &gen.ListReleaseBindingsParams{Component: ptr(component)})
-	if err != nil {
-		return nil, err
+	var out []gen.ReleaseBinding
+	var cursor *string
+	for {
+		p := &gen.ListReleaseBindingsParams{Cursor: cursor}
+		if component != "" {
+			p.Component = ptr(component)
+		}
+		r, err := c.oc.ListReleaseBindingsWithResponse(ctx, ns, p)
+		if err != nil {
+			return nil, err
+		}
+		if r.JSON200 == nil {
+			return nil, respError(r.StatusCode(), r.Body)
+		}
+		out = append(out, r.JSON200.Items...)
+		next := nextCursor(r.JSON200.Pagination)
+		if next == nil {
+			return out, nil
+		}
+		cursor = next
 	}
-	if r.JSON200 == nil {
-		return nil, respError(r.StatusCode(), r.Body)
-	}
-	return r.JSON200.Items, nil
 }
 
 func (c *Client) GetReleaseBinding(ctx context.Context, ns, name string) (*gen.ReleaseBinding, error) {

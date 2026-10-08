@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/wso2/web-app-hosting/backend/internal/openchoreo"
 	"github.com/wso2/web-app-hosting/backend/internal/openchoreo/gen"
 	"github.com/wso2/web-app-hosting/backend/internal/platform"
@@ -134,23 +136,37 @@ func (s *Service) getTrack(ctx context.Context, webAppID, trackID string) (*trac
 }
 
 // ListTracks lists a web app's deployment tracks.
+// The tracks and the namespace's bindings are read once each, concurrently
+// (not one binding list per track).
 func (s *Service) ListTracks(ctx context.Context, webAppID string) ([]DeploymentTrack, error) {
-	tracks, err := s.webAppTracks(ctx, webAppID)
-	if err != nil {
+	var (
+		tracks   []track
+		bindings []gen.ReleaseBinding
+	)
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() (err error) { tracks, err = s.webAppTracks(gctx, webAppID); return })
+	g.Go(func() (err error) { bindings, err = s.oc.ListReleaseBindings(gctx, ns(gctx), ""); return })
+	if err := g.Wait(); err != nil {
 		return nil, err
 	}
+	idx := indexBindings(bindings)
 	out := make([]DeploymentTrack, 0, len(tracks))
 	for _, t := range tracks {
-		deployed, err := s.trackDeployed(ctx, t.Name)
-		if err != nil {
-			return nil, err
-		}
 		out = append(out, DeploymentTrack{
 			ID: t.Name, Branch: t.Branch, IsDefault: t.IsDefault, AutoDeploy: t.AutoDeploy,
-			Deployed: deployed, CreatedAt: ts(t.comp.Metadata.CreationTimestamp),
+			Deployed: anyActive(idx[t.Name]), CreatedAt: ts(t.comp.Metadata.CreationTimestamp),
 		})
 	}
 	return out, nil
+}
+
+func anyActive(byEnv map[string]gen.ReleaseBinding) bool {
+	for _, b := range byEnv {
+		if bindingActive(b) {
+			return true
+		}
+	}
+	return false
 }
 
 // trackDeployed reports whether any environment has an active binding.

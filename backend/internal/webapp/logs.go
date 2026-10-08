@@ -109,11 +109,11 @@ func normLevel(l string) string {
 
 // DefaultURLs returns each pipeline environment's default URL ("" when not deployed).
 func (s *Service) DefaultURLs(ctx context.Context, webAppID, trackID string) ([]EnvironmentDefaultURL, error) {
-	t, err := s.getTrack(ctx, webAppID, trackID)
+	t, bindings, _, err := s.trackState(ctx, webAppID, trackID, false)
 	if err != nil {
 		return nil, err
 	}
-	envs, bindings, err := s.envBindings(ctx, *t)
+	envs, err := s.pipelineEnvironments(ctx, t.Project)
 	if err != nil {
 		return nil, err
 	}

@@ -11,18 +11,15 @@ import (
 
 // activeBinding returns the track's binding in env, or NOT_FOUND.
 func (s *Service) activeBinding(ctx context.Context, webAppID, trackID, env string) (*track, *gen.ReleaseBinding, error) {
-	t, err := s.getTrack(ctx, webAppID, trackID)
+	t, bindings, _, err := s.trackState(ctx, webAppID, trackID, false)
 	if err != nil {
 		return nil, nil, err
 	}
-	b, err := s.oc.FindBinding(ctx, ns(ctx), t.Name, env)
-	if err != nil {
-		return nil, nil, err
-	}
-	if b == nil || releaseOf(*b) == "" {
+	b, ok := bindings[env]
+	if !ok || releaseOf(b) == "" {
 		return nil, nil, errf(CodeNotFound, "not deployed to %s", env)
 	}
-	return t, b, nil
+	return t, &b, nil
 }
 
 // ReleaseDetails returns what runs in an environment.

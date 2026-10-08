@@ -27,6 +27,28 @@ type fakePAS struct {
 	projects   []map[string]any
 	components []map[string]any
 	quotaFull  bool
+	// gets counts GET requests by path (query stripped).
+	gets map[string]int
+}
+
+// resetGets clears the GET counters.
+func (f *fakePAS) resetGets() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.gets = map[string]int{}
+}
+
+// totalGets returns the number of GETs since the last reset.
+func (f *fakePAS) totalGets() (int, map[string]int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	cp := map[string]int{}
+	for k, v := range f.gets {
+		n += v
+		cp[k] = v
+	}
+	return n, cp
 }
 
 type recorded struct {
@@ -44,6 +66,11 @@ func (f *fakePAS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method != http.MethodGet {
 		f.writes = append(f.writes, recorded{r.Method, r.URL.Path, body})
+	} else {
+		if f.gets == nil {
+			f.gets = map[string]int{}
+		}
+		f.gets[r.URL.Path]++
 	}
 	p := strings.TrimPrefix(r.URL.Path, "/api/v1/namespaces/org-ns/")
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -119,6 +146,10 @@ func newTestServer(t *testing.T, pas *fakePAS) (*httptest.Server, *httptest.Serv
 	t.Helper()
 	ocSrv := httptest.NewServer(pas)
 	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/branches") {
+			writeJSON(w, 200, []any{map[string]any{"name": "main"}, map[string]any{"name": "b1"}, map[string]any{"name": "b2"}, map[string]any{"name": "b3"}, map[string]any{"name": "b4"}})
+			return
+		}
 		writeJSON(w, 200, map[string]any{"sha": "abc123", "commit": map[string]any{"message": "init\nbody", "author": map[string]any{"name": "dev", "date": "2026-10-07T09:00:00Z"}}})
 	}))
 	oc, err := openchoreo.New(openchoreo.Config{
@@ -278,4 +309,54 @@ func TestStatusMapping(t *testing.T) {
 			t.Errorf("Status(%v) = %d %s, want %d %s", c.err, s, code, c.status, c.code)
 		}
 	}
+}
+
+// TestListCallsAreConstant proves the list endpoints the console polls make
+// O(1) upstream calls per request, not one (or more) per item.
+func TestListCallsAreConstant(t *testing.T) {
+	measure := func(t *testing.T, apps, tracks int) (webApps, projects, trackList int) {
+		pas := &fakePAS{}
+		srv, _ := newTestServer(t, pas)
+		call(t, srv, "GET", "/projects", nil)
+		for i := range apps {
+			in := map[string]any{}
+			for k, v := range createInput {
+				in[k] = v
+			}
+			in["handler"] = fmt.Sprintf("site%d", i)
+			if code, obj, _ := call(t, srv, "POST", "/projects/default/webapps", in); code != 201 {
+				t.Fatalf("create: %d %v", code, obj)
+			}
+		}
+		for i := 1; i <= tracks; i++ {
+			if code, obj, _ := call(t, srv, "POST", "/webapps/site0/tracks", map[string]any{"branch": fmt.Sprintf("b%d", i)}); code != 201 {
+				t.Fatalf("create track: %d %v", code, obj)
+			}
+		}
+		waitBackground(t, srv)
+		count := func(path string, n int) int {
+			pas.resetGets()
+			code, _, arr := call(t, srv, "GET", path, nil)
+			if code != 200 || len(arr) != n {
+				t.Fatalf("GET %s: %d, %d items", path, code, len(arr))
+			}
+			got, by := pas.totalGets()
+			t.Logf("GET %s (%d items): %d upstream GETs %v", path, n, got, by)
+			return got
+		}
+		return count("/projects/default/webapps", apps), count("/projects", 1), count("/webapps/site0/tracks", tracks+1)
+	}
+	w1, p1, t1 := measure(t, 1, 0)
+	w5, p5, t5 := measure(t, 5, 3)
+	if w1 != w5 || p1 != p5 || t1 != t5 {
+		t.Fatalf("upstream calls grow with items: webapps %d→%d, projects %d→%d, tracks %d→%d", w1, w5, p1, p5, t1, t5)
+	}
+	if w5 > 5 || p5 > 2 || t5 > 2 {
+		t.Fatalf("too many upstream calls: webapps %d, projects %d, tracks %d", w5, p5, t5)
+	}
+}
+
+// waitBackground waits for the service's background follow-up work (first builds).
+func waitBackground(t *testing.T, _ *httptest.Server) {
+	t.Helper()
 }

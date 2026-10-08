@@ -7,31 +7,38 @@ import (
 	"sort"
 	"strings"
 
+	"golang.org/x/sync/errgroup"
+
+	"github.com/wso2/web-app-hosting/backend/internal/openchoreo/gen"
 	"github.com/wso2/web-app-hosting/backend/internal/platform"
 )
 
-// ListWebApps lists a project's web apps.
+// ListWebApps lists a project's web apps. It reads the project's
+// components, environments and the namespace's release bindings once each,
+// concurrently, and joins them in memory: O(1) upstream calls per request.
 func (s *Service) ListWebApps(ctx context.Context, projectID string) ([]WebApp, error) {
-	comps, err := s.oc.ListComponents(ctx, ns(ctx), projectID, webAppSelector)
-	if err != nil {
+	n := ns(ctx)
+	var (
+		comps    []gen.Component
+		envs     []Environment
+		bindings []gen.ReleaseBinding
+	)
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() (err error) { comps, err = s.oc.ListComponents(gctx, n, projectID, webAppSelector); return })
+	g.Go(func() (err error) { envs, err = s.pipelineEnvironments(gctx, projectID); return })
+	g.Go(func() (err error) { bindings, err = s.oc.ListReleaseBindings(gctx, n, ""); return })
+	if err := g.Wait(); err != nil {
 		return nil, err
 	}
+	idx := indexBindings(bindings)
 	byApp := map[string][]track{}
 	for _, c := range comps {
 		t := trackOf(c)
 		byApp[t.WebApp] = append(byApp[t.WebApp], t)
 	}
-	envs, err := s.pipelineEnvironments(ctx, projectID)
-	if err != nil {
-		return nil, err
-	}
 	out := make([]WebApp, 0, len(byApp))
 	for _, tracks := range byApp {
-		w, err := s.toWebApp(ctx, tracks, envs, false)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *w)
+		out = append(out, s.toWebApp(tracks, envs, idx, nil))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt > out[j].UpdatedAt })
 	return out, nil
@@ -46,21 +53,47 @@ func (s *Service) GetWebApp(ctx context.Context, projectID, webAppID string) (*W
 	if projectID != "" && tracks[0].Project != projectID {
 		return nil, errf(CodeNotFound, "web app %q not found in project %q", webAppID, projectID)
 	}
-	envs, err := s.pipelineEnvironments(ctx, tracks[0].Project)
-	if err != nil {
+	def := defaultTrack(tracks)
+	n := ns(ctx)
+	var (
+		envs     []Environment
+		bindings []gen.ReleaseBinding
+		runs     []gen.WorkflowRun
+	)
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() (err error) { envs, err = s.pipelineEnvironments(gctx, def.Project); return })
+	g.Go(func() (err error) { bindings, err = s.oc.ListReleaseBindings(gctx, n, def.Name); return })
+	g.Go(func() error {
+		// The latest commit is decoration: a failure here doesn't fail the page.
+		runs, _ = s.listRuns(gctx, def.Name)
+		return nil
+	})
+	if err := g.Wait(); err != nil {
 		return nil, err
 	}
-	return s.toWebApp(ctx, tracks, envs, true)
+	var latest *gen.WorkflowRun
+	if len(runs) > 0 {
+		latest = &runs[0]
+	}
+	w := s.toWebApp(tracks, envs, indexBindings(bindings), latest)
+	return &w, nil
 }
 
-func (s *Service) toWebApp(ctx context.Context, tracks []track, envs []Environment, withCommit bool) (*WebApp, error) {
+func defaultTrack(tracks []track) track {
 	def := tracks[0]
 	for _, t := range tracks {
 		if t.IsDefault {
 			def = t
 		}
 	}
-	w := &WebApp{
+	return def
+}
+
+// toWebApp builds the web app view from its tracks, the pipeline, the
+// bindings index and (optionally) the default track's latest run. No I/O.
+func (s *Service) toWebApp(tracks []track, envs []Environment, bindings bindingIndex, latest *gen.WorkflowRun) WebApp {
+	def := defaultTrack(tracks)
+	w := WebApp{
 		ID: def.WebApp, Handler: def.WebApp, ProjectID: def.Project, DefaultTrack: def.Name,
 		DisplayName: annotation(def.comp.Metadata, AnnDisplayName), Description: annotation(def.comp.Metadata, AnnDescription),
 		Framework: def.Preset.Label(), BuildPreset: string(def.Preset), SourceType: def.SourceType, RepoURL: def.RepoURL,
@@ -70,25 +103,17 @@ func (s *Service) toWebApp(ctx context.Context, tracks []track, envs []Environme
 		w.DisplayName = def.WebApp
 	}
 	if len(envs) > 0 {
-		b, err := s.oc.FindBinding(ctx, ns(ctx), def.Name, envs[0].ID)
-		if err != nil {
-			return nil, err
-		}
-		if b != nil && bindingActive(*b) {
-			w.Status = webAppStatus(deploymentStatus(*b))
-			w.URL = s.bindingURL(*b)
+		if b, ok := bindings[def.Name][envs[0].ID]; ok && bindingActive(b) {
+			w.Status = webAppStatus(deploymentStatus(b))
+			w.URL = s.bindingURL(b)
 		}
 	}
-	if withCommit {
-		runs, err := s.listRuns(ctx, def.Name)
-		if err == nil && len(runs) > 0 {
-			r := runs[0]
-			if sha := annotation(r.Metadata, AnnCommitSHA); sha != "" {
-				w.LatestCommit = &Commit{SHA: sha, Message: annotation(r.Metadata, AnnCommitMessage), Author: annotation(r.Metadata, AnnCommitAuthor), CommittedAt: annotation(r.Metadata, AnnCommitDate)}
-			}
+	if latest != nil {
+		if sha := annotation(latest.Metadata, AnnCommitSHA); sha != "" {
+			w.LatestCommit = &Commit{SHA: sha, Message: annotation(latest.Metadata, AnnCommitMessage), Author: annotation(latest.Metadata, AnnCommitAuthor), CommittedAt: annotation(latest.Metadata, AnnCommitDate)}
 		}
 	}
-	return w, nil
+	return w
 }
 
 func webAppStatus(deployment string) string {
@@ -162,11 +187,8 @@ func (s *Service) CreateWebApp(ctx context.Context, projectID string, in CreateW
 	if _, err := s.TriggerBuild(ctx, in.Handler, t.Name, ""); err != nil {
 		slog.WarnContext(ctx, "first build failed to start", "webApp", in.Handler, "error", err)
 	}
-	envs, err := s.pipelineEnvironments(ctx, projectID)
-	if err != nil {
-		return nil, err
-	}
-	return s.toWebApp(ctx, []track{t}, envs, false)
+	w := s.toWebApp([]track{t}, nil, nil, nil)
+	return &w, nil
 }
 
 func repoURLOf(in CreateWebAppInput) (string, error) {

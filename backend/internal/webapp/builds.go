@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/wso2/web-app-hosting/backend/internal/auth"
 	"github.com/wso2/web-app-hosting/backend/internal/openchoreo/gen"
 	"github.com/wso2/web-app-hosting/backend/internal/platform"
@@ -102,12 +104,14 @@ func toBuildRun(r gen.WorkflowRun, branch string) BuildRun {
 // ListBuilds lists a track's builds, newest first. It also finishes any
 // pending auto-deploy whose watcher did not (e.g. the BFF restarted).
 func (s *Service) ListBuilds(ctx context.Context, webAppID, trackID string) ([]BuildRun, error) {
-	t, err := s.getTrack(ctx, webAppID, trackID)
-	if err != nil {
-		return nil, err
-	}
-	runs, err := s.listRuns(ctx, t.Name)
-	if err != nil {
+	var (
+		t    *track
+		runs []gen.WorkflowRun
+	)
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() (err error) { t, err = s.getTrack(gctx, webAppID, trackID); return })
+	g.Go(func() (err error) { runs, err = s.listRuns(gctx, trackID); return })
+	if err := g.Wait(); err != nil {
 		return nil, err
 	}
 	out := make([]BuildRun, 0, len(runs))
