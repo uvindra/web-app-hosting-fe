@@ -81,7 +81,9 @@ withEnvironment` renders the environment picker.
 
 The BFF reads the org's plan (billing user API on WSO2 Cloud; `LOCAL_PLAN=free|paid` locally) and
 answers `403 PLAN_REQUIRED` for paid-only features: HPA, more than 1 fixed replica, container resources
-above the defaults (CPU 100m, memory 350Mi / 1Gi) and deploying past the first environment. The console
+above the defaults (CPU 100m, memory 350Mi / 1Gi) and deploying past the first environment. Gates compare with
+the saved settings: values already above a free plan's limits (after a downgrade) can be kept or reduced, not raised
+(the console's `containerForm.exceedsAllowance` / `scaling/scalingForm` mirror the BFF). The console
 reads `GET /plan` (`usePlan`) to disable those controls with an upgrade hint (`PlanUpgradeHint`, linking
 to `BILLING_CONSOLE_URL` when set); `ErrorAlert` also recognises `PLAN_REQUIRED`. The plan badge and the
 "Upgrade" button in the header show only when billing is configured (not locally) — ipaas'
@@ -142,6 +144,32 @@ one card per pipeline environment) — no registry, no plugin indirection.
   `AUTH_MODE=dev` (local only), which then uses its own client for every platform call.
 
 ## Changelog
+
+### 2026-10-08 — P1 code-review fixes
+
+- **Every settings write goes through one re-cut-aware binding writer (BFF).** Fixed replicas (HPA off) and container
+  resources wrote the binding directly, so the `hpa` trait config landed on bindings whose release predates CT v3 (no
+  `hpa` trait instance). Verified on k3d (OpenChoreo 1.3.0, a `cc-p1r-` component bound to a copied v2 release): the
+  API PUT and the admission webhook accept trait configs for an absent trait instance and silently ignore them — no
+  error, binding Ready, no HPA even with `enabled: true`; the replica change still renders. `applyBindingSettings`
+  (was `applyP1Binding`) now does all of them under the track lock and re-cuts a pre-v3 release; HPA/health checks fail
+  if the re-cut fails, resources/fixed replicas are then written onto the old release, and trait configs are only
+  written when the bound release carries the trait.
+- **Plan gating keeps saved paid settings editable (BFF + console).** A downgraded org with above-default resources or
+  more than one replica couldn't save any change. Now only raising beyond max(plan limit, saved value) is rejected
+  (resources per field, fixed replicas, HPA min/max while HPA is already on).
+- **Billing statuses (BFF):** the plan is paid for the billing service's live statuses — `active`, `trial`,
+  `past_due` (grace period), `pending_cancellation` (paid until period end) — the same set as billing's own
+  `isLive`; `inactive`, `pending_activation`, `suspended`, `cancelled` gate like free (there is no `trialing`).
+- **Pods/replicas no longer query the Observer (BFF + console).** `Pods()` ran a ≤3s Observer query per call; the
+  console now applies the polled `GET …/usage` totals to a lone running pod (Runtime) or replica (Scaling).
+- **Trait attach pass runs in the background (BFF):** detached, 4 at a time, 5 min timeout, once per namespace per CT
+  version; the lazy `ensureTrackTrait` before a re-cut keeps correctness.
+- **Smaller BFF fixes:** release re-cut returns 409 instead of panicking on a release/workload without a spec; image
+  tracks' Deployments read each bound release once, concurrently; metrics CPU/memory rows come only from usage samples
+  (request/limit timestamps no longer add usage-less rows → no chart gaps); `probeFromK8s` reuses `intOr`.
+- **Console:** `upgradeUrl()` returns `string | undefined` (no `?? ''`); PlanUpgradeHint, ErrorAlert and AppLayout
+  guard it.
 
 ### 2026-10-08 — Fixes from the P1 browser walkthrough
 
