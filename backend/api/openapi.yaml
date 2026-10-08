@@ -14,7 +14,9 @@ info:
     - Errors use `{code, message}`. `402 QUOTA_EXCEEDED` = the plan's track quota
       is reached (PAS entitlement gate); `501 NOT_SUPPORTED` = a P1/P2 feature;
       `403 PLAN_REQUIRED` = the feature needs a paid plan (HPA, replicas > 1,
-      resources above the defaults, environments past the first);
+      resources above the defaults, environments past the first) — saved
+      values above a free plan's limits (after a downgrade) may be kept or
+      reduced, not raised;
       `429 GIT_RATE_LIMITED` = the GitHub API rate limit is exhausted (public
       GitHub reads are cached for ~60s); `502 UPSTREAM_ERROR` / `504
       UPSTREAM_TIMEOUT` = OpenChoreo or a platform service failed / timed out.

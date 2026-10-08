@@ -7,6 +7,9 @@ import type { HpaSettings } from '../../types/scaling';
 interface HpaConfigProps {
   value: HpaSettings;
   onChange: (value: HpaSettings) => void;
+  /** Caps on min / max replicas (the plan's, relative to the saved settings); default MAX_REPLICAS. */
+  minReplicasCap?: number;
+  maxReplicasCap?: number;
 }
 
 interface ThresholdSliderProps {
@@ -34,12 +37,12 @@ function ThresholdSlider({ label, value, min, max, defaultValue, onChange }: Thr
   );
 }
 
-export default function HpaConfig({ value, onChange }: HpaConfigProps): JSX.Element {
+export default function HpaConfig({ value, onChange, minReplicasCap = MAX_REPLICAS, maxReplicasCap = MAX_REPLICAS }: HpaConfigProps): JSX.Element {
   return (
     <Stack gap={2.5}>
       <Stack direction={{ xs: 'column', md: 'row' }} gap={4}>
-        <RangeInput label="Min replicas" value={value.minReplicas} onChange={(minReplicas) => onChange({ ...value, minReplicas, maxReplicas: Math.max(value.maxReplicas, minReplicas) })} min={1} max={MAX_REPLICAS} />
-        <RangeInput label="Max replicas" value={value.maxReplicas} onChange={(maxReplicas) => onChange({ ...value, maxReplicas, minReplicas: Math.min(value.minReplicas, maxReplicas) })} min={1} max={MAX_REPLICAS} />
+        <RangeInput label="Min replicas" value={value.minReplicas} onChange={(minReplicas) => onChange({ ...value, minReplicas, maxReplicas: Math.max(value.maxReplicas, minReplicas) })} min={1} max={Math.min(minReplicasCap, maxReplicasCap)} />
+        <RangeInput label="Max replicas" value={value.maxReplicas} onChange={(maxReplicas) => onChange({ ...value, maxReplicas, minReplicas: Math.min(value.minReplicas, maxReplicas) })} min={1} max={maxReplicasCap} />
       </Stack>
       <Stack direction={{ xs: 'column', md: 'row' }} gap={2}>
         <ThresholdSlider label="CPU threshold" value={value.cpuUtilization} min={CPU_THRESHOLD.min} max={CPU_THRESHOLD.max} defaultValue={CPU_THRESHOLD.default} onChange={(cpuUtilization) => onChange({ ...value, cpuUtilization })} />

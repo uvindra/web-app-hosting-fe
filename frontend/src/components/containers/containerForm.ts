@@ -56,19 +56,25 @@ export function isFormDirty(f: ContainerForm, c: WebAppContainer): boolean {
 /** The platform's default resources (CPU millicores, memory MiB); free plans can't go above them. */
 export const DEFAULT_RESOURCES = { cpuRequest: 100, cpuLimit: 100, memoryRequest: 350, memoryLimit: 1024 } as const;
 
-/** Whether the form asks for more than the default resources (a paid-plan feature). */
-export function exceedsDefaults(f: ContainerForm): boolean {
-  return f.cpuRequest > DEFAULT_RESOURCES.cpuRequest || f.cpuLimit > DEFAULT_RESOURCES.cpuLimit || f.memoryRequest > DEFAULT_RESOURCES.memoryRequest || f.memoryLimit > DEFAULT_RESOURCES.memoryLimit;
+/**
+ * Whether the form raises a resource above both the default and its saved value (a paid-plan feature). Keeping or
+ * lowering values that are already above the defaults (e.g. after a plan downgrade) is allowed on every plan — the BFF
+ * applies the same rule.
+ */
+export function exceedsAllowance(f: ContainerForm, saved: WebAppContainer): boolean {
+  const d = DEFAULT_RESOURCES;
+  const above = (value: number, def: number, current: number): boolean => value > Math.max(def, current);
+  return above(f.cpuRequest, d.cpuRequest, saved.cpuRequest) || above(f.cpuLimit, d.cpuLimit, saved.cpuLimit) || above(f.memoryRequest, d.memoryRequest, saved.memoryRequest) || above(f.memoryLimit, d.memoryLimit, saved.memoryLimit);
 }
 
 /** `customResources`: the plan allows resources above the defaults (undefined = unknown, not checked here). */
-export function validateForm(f: ContainerForm, customResources?: boolean): string[] {
+export function validateForm(f: ContainerForm, saved: WebAppContainer, customResources?: boolean): string[] {
   const errors: string[] = [];
   if (f.cpuRequest > f.cpuLimit) errors.push('CPU request cannot exceed the limit.');
   if (f.memoryRequest > f.memoryLimit) errors.push('Memory request cannot exceed the limit.');
-  if (customResources === false && exceedsDefaults(f)) {
+  if (customResources === false && exceedsAllowance(f, saved)) {
     const d = DEFAULT_RESOURCES;
-    errors.push(`Your plan allows up to ${d.cpuLimit}m CPU and ${d.memoryRequest}Mi / ${d.memoryLimit}Mi memory (request / limit). Upgrade to a paid plan for more.`);
+    errors.push(`Your plan allows up to ${d.cpuLimit}m CPU and ${d.memoryRequest}Mi / ${d.memoryLimit}Mi memory (request / limit), or your current values. Upgrade to a paid plan for more.`);
   }
   return errors;
 }

@@ -61,7 +61,7 @@ export default function ContainerEditForm({ container, track, environment, onClo
   const [form, setForm] = useState(() => containerToForm(container));
   const update = useUpdateContainer(track, environment);
   const customResources = usePlanLimits()?.customResources;
-  const errors = validateForm(form, customResources);
+  const errors = validateForm(form, container, customResources);
   // Free plans: the sliders stop at the defaults (or at today's values, if already above them).
   const cpuMax = customResources === false ? Math.max(DEFAULT_RESOURCES.cpuLimit, container.cpuLimit) : CPU_MAX;
   const memoryMax = customResources === false ? Math.max(DEFAULT_RESOURCES.memoryLimit, container.memoryLimit) : MEMORY_MAX;

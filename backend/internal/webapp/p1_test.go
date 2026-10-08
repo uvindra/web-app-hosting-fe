@@ -152,26 +152,43 @@ func intp(i int) *int { return &i }
 func TestValidateScaling(t *testing.T) {
 	free, paid := limitsFor(platform.PlanFree), limitsFor(platform.PlanPaid)
 	hpa := ScalingConfig{Method: ScaleHPA, HPA: HPASettings{MinReplicas: 1, MaxReplicas: 3, CPUUtilization: intp(60)}}
+	one := ScalingConfig{Method: ScaleNone, FixedReplicas: 1, HPA: HPASettings{MinReplicas: 1, MaxReplicas: 3}}
+	fixed := func(n int) ScalingConfig { c := one; c.FixedReplicas = n; return c }
+	withHPA := func(min, max int) ScalingConfig {
+		c := hpa
+		c.HPA.MinReplicas, c.HPA.MaxReplicas = min, max
+		return c
+	}
 	cases := []struct {
-		name string
-		in   ScalingConfig
-		l    PlanLimits
-		code Code // "" = ok
+		name      string
+		in, saved ScalingConfig
+		l         PlanLimits
+		code      Code // "" = ok
 	}{
-		{"hpa paid", hpa, paid, ""},
-		{"hpa free", hpa, free, CodePlanRequired},
-		{"hpa no target", ScalingConfig{Method: ScaleHPA, HPA: HPASettings{MinReplicas: 1, MaxReplicas: 3}}, paid, CodeBadRequest},
-		{"hpa max 6", ScalingConfig{Method: ScaleHPA, HPA: HPASettings{MinReplicas: 1, MaxReplicas: 6, MemoryUtilization: intp(80)}}, paid, CodeBadRequest},
-		{"hpa min > max", ScalingConfig{Method: ScaleHPA, HPA: HPASettings{MinReplicas: 4, MaxReplicas: 3, CPUUtilization: intp(60)}}, paid, CodeBadRequest},
-		{"hpa target 0", ScalingConfig{Method: ScaleHPA, HPA: HPASettings{MinReplicas: 1, MaxReplicas: 3, CPUUtilization: intp(0)}}, paid, CodeBadRequest},
-		{"1 replica free", ScalingConfig{Method: ScaleNone, FixedReplicas: 1}, free, ""},
-		{"2 replicas free", ScalingConfig{Method: ScaleNone, FixedReplicas: 2}, free, CodePlanRequired},
-		{"5 replicas paid", ScalingConfig{Method: ScaleNone, FixedReplicas: 5}, paid, ""},
-		{"6 replicas paid", ScalingConfig{Method: ScaleNone, FixedReplicas: 6}, paid, CodeBadRequest},
-		{"unknown method", ScalingConfig{Method: "KEDA"}, paid, CodeBadRequest},
+		{"hpa paid", hpa, one, paid, ""},
+		{"hpa free", hpa, one, free, CodePlanRequired},
+		{"hpa no target", ScalingConfig{Method: ScaleHPA, HPA: HPASettings{MinReplicas: 1, MaxReplicas: 3}}, one, paid, CodeBadRequest},
+		{"hpa max 6", ScalingConfig{Method: ScaleHPA, HPA: HPASettings{MinReplicas: 1, MaxReplicas: 6, MemoryUtilization: intp(80)}}, one, paid, CodeBadRequest},
+		{"hpa min > max", ScalingConfig{Method: ScaleHPA, HPA: HPASettings{MinReplicas: 4, MaxReplicas: 3, CPUUtilization: intp(60)}}, one, paid, CodeBadRequest},
+		{"hpa target 0", ScalingConfig{Method: ScaleHPA, HPA: HPASettings{MinReplicas: 1, MaxReplicas: 3, CPUUtilization: intp(0)}}, one, paid, CodeBadRequest},
+		{"1 replica free", one, one, free, ""},
+		{"2 replicas free", fixed(2), one, free, CodePlanRequired},
+		{"5 replicas paid", fixed(5), one, paid, ""},
+		{"6 replicas paid", fixed(6), one, paid, CodeBadRequest},
+		{"unknown method", ScalingConfig{Method: "KEDA"}, one, paid, CodeBadRequest},
+		// Downgraded (free) org with paid settings saved: keep or reduce, never raise.
+		{"free keeps 3 replicas", fixed(3), fixed(3), free, ""},
+		{"free reduces 3 -> 2", fixed(2), fixed(3), free, ""},
+		{"free raises 3 -> 4", fixed(4), fixed(3), free, CodePlanRequired},
+		{"free keeps hpa", withHPA(2, 4), withHPA(2, 4), free, ""},
+		{"free edits hpa target", func() ScalingConfig { c := withHPA(2, 4); c.HPA.CPUUtilization = intp(80); return c }(), withHPA(2, 4), free, ""},
+		{"free lowers hpa max", withHPA(1, 3), withHPA(2, 4), free, ""},
+		{"free raises hpa max", withHPA(2, 5), withHPA(2, 4), free, CodePlanRequired},
+		{"free raises hpa min", withHPA(3, 4), withHPA(2, 4), free, CodePlanRequired},
+		{"free hpa -> fixed at saved count", fixed(2), func() ScalingConfig { c := withHPA(2, 4); c.FixedReplicas = 2; return c }(), free, ""},
 	}
 	for _, c := range cases {
-		err := ValidateScaling(c.in, c.l)
+		err := ValidateScaling(c.in, c.saved, c.l)
 		e, _ := AsError(err)
 		switch {
 		case c.code == "" && err != nil:
@@ -227,13 +244,14 @@ func TestScalingHPAAndBack(t *testing.T) {
 	}
 }
 
-func TestAboveDefaultResources(t *testing.T) {
+func TestExceedsResourceAllowance(t *testing.T) {
 	def := ContainerUpdate{CPURequest: 100, CPULimit: 100, MemoryRequest: 350, MemoryLimit: 1024}
-	if AboveDefaultResources(def) {
-		t.Error("defaults are not above defaults")
+	atDefaults := Container{CPURequest: 100, CPULimit: 100, MemoryRequest: 350, MemoryLimit: 1024}
+	if ExceedsResourceAllowance(def, atDefaults) {
+		t.Error("defaults are within the allowance")
 	}
 	small := ContainerUpdate{CPURequest: 50, CPULimit: 100, MemoryRequest: 128, MemoryLimit: 512}
-	if AboveDefaultResources(small) {
+	if ExceedsResourceAllowance(small, atDefaults) {
 		t.Error("less than the defaults is allowed on every plan")
 	}
 	for _, u := range []ContainerUpdate{
@@ -241,9 +259,49 @@ func TestAboveDefaultResources(t *testing.T) {
 		{CPURequest: 100, CPULimit: 100, MemoryRequest: 351, MemoryLimit: 1024},
 		{CPURequest: 100, CPULimit: 100, MemoryRequest: 350, MemoryLimit: 2048},
 	} {
-		if !AboveDefaultResources(u) {
+		if !ExceedsResourceAllowance(u, atDefaults) {
 			t.Errorf("%+v is above the defaults", u)
 		}
+	}
+	// Already above the defaults (plan downgrade): keeping or lowering is fine, raising is not.
+	big := Container{CPURequest: 500, CPULimit: 1000, MemoryRequest: 512, MemoryLimit: 2048}
+	keep := ContainerUpdate{CPURequest: 500, CPULimit: 1000, MemoryRequest: 512, MemoryLimit: 2048}
+	lower := ContainerUpdate{CPURequest: 200, CPULimit: 500, MemoryRequest: 512, MemoryLimit: 1536}
+	if ExceedsResourceAllowance(keep, big) || ExceedsResourceAllowance(lower, big) {
+		t.Error("keeping or lowering saved above-default resources is allowed")
+	}
+	if !ExceedsResourceAllowance(ContainerUpdate{CPURequest: 500, CPULimit: 1500, MemoryRequest: 512, MemoryLimit: 2048}, big) {
+		t.Error("raising a saved above-default limit is not")
+	}
+}
+
+// TestDowngradedPlanSavesExistingSettings: a free org whose environment
+// still has paid settings can save changes that don't raise them.
+func TestDowngradedPlanSavesExistingSettings(t *testing.T) {
+	e := newTestEnv(t)
+	e.addTrack("site", "site", "main", true)
+	e.deployOldRelease("run-a", "img-a")
+	if _, err := e.svc.UpdateContainer(e.ctx, "site", "site", "development", "main", ContainerUpdate{ImagePullPolicy: "IfNotPresent", CPURequest: 500, CPULimit: 1000, MemoryRequest: 512, MemoryLimit: 2048}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.UpdateScaling(e.ctx, "site", "site", "development", ScalingConfig{Method: ScaleNone, FixedReplicas: 3, HPA: HPASettings{MinReplicas: 1, MaxReplicas: 3}}); err != nil {
+		t.Fatal(err)
+	}
+	e.setPlan(platform.PlanFree)
+	// Change only the pull policy; resources stay above the defaults.
+	if _, err := e.svc.UpdateContainer(e.ctx, "site", "site", "development", "main", ContainerUpdate{ImagePullPolicy: "Always", CPURequest: 500, CPULimit: 1000, MemoryRequest: 512, MemoryLimit: 2048}); err != nil {
+		t.Fatalf("unchanged resources: %v", err)
+	}
+	_, err := e.svc.UpdateContainer(e.ctx, "site", "site", "development", "main", ContainerUpdate{ImagePullPolicy: "Always", CPURequest: 500, CPULimit: 2000, MemoryRequest: 512, MemoryLimit: 2048})
+	if ae, _ := AsError(err); ae == nil || ae.Code != CodePlanRequired {
+		t.Fatalf("raising the CPU limit: %v", err)
+	}
+	if _, err := e.svc.UpdateScaling(e.ctx, "site", "site", "development", ScalingConfig{Method: ScaleNone, FixedReplicas: 2, HPA: HPASettings{MinReplicas: 1, MaxReplicas: 3}}); err != nil {
+		t.Fatalf("reducing replicas: %v", err)
+	}
+	_, err = e.svc.UpdateScaling(e.ctx, "site", "site", "development", ScalingConfig{Method: ScaleNone, FixedReplicas: 3, HPA: HPASettings{MinReplicas: 1, MaxReplicas: 3}})
+	if ae, _ := AsError(err); ae == nil || ae.Code != CodePlanRequired {
+		t.Fatalf("raising replicas back: %v", err)
 	}
 }
 

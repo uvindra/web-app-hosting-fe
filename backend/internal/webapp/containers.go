@@ -141,7 +141,7 @@ func (s *Service) UpdateContainer(ctx context.Context, webAppID, trackID, env, c
 	if u.ImagePullPolicy != "Always" && u.ImagePullPolicy != "IfNotPresent" {
 		return nil, errf(CodeBadRequest, "invalid image pull policy %q", u.ImagePullPolicy)
 	}
-	if AboveDefaultResources(u) {
+	if ExceedsResourceAllowance(u, cur[0]) {
 		l, err := s.limits(ctx)
 		if err != nil {
 			return nil, err
@@ -170,11 +170,14 @@ func (s *Service) UpdateContainer(ctx context.Context, webAppID, trackID, env, c
 	return &out[0], nil
 }
 
-// AboveDefaultResources reports whether u asks for more than the CT
-// defaults (a paid-plan feature).
-func AboveDefaultResources(u ContainerUpdate) bool {
-	return u.CPURequest > ParseCPU(defaultCPURequest) || u.CPULimit > ParseCPU(defaultCPULimit) ||
-		u.MemoryRequest > ParseMemory(defaultMemRequest)>>20 || u.MemoryLimit > ParseMemory(defaultMemLimit)>>20
+// ExceedsResourceAllowance reports whether u raises a resource above both the
+// CT default and its currently saved value (a paid-plan feature). Keeping or
+// lowering values that are already above the defaults (e.g. after a plan
+// downgrade) is allowed on every plan.
+func ExceedsResourceAllowance(u ContainerUpdate, saved Container) bool {
+	above := func(v, def, cur int64) bool { return v > max(def, cur) }
+	return above(u.CPURequest, ParseCPU(defaultCPURequest), saved.CPURequest) || above(u.CPULimit, ParseCPU(defaultCPULimit), saved.CPULimit) ||
+		above(u.MemoryRequest, ParseMemory(defaultMemRequest)>>20, saved.MemoryRequest) || above(u.MemoryLimit, ParseMemory(defaultMemLimit)>>20, saved.MemoryLimit)
 }
 
 func nonNil(l []string) []string {
@@ -264,11 +267,16 @@ func (s *Service) Scaling(ctx context.Context, webAppID, trackID, env string) (*
 	return toScaling(b.Spec), nil
 }
 
-// ValidateScaling checks a scaling config against the plan limits.
-func ValidateScaling(in ScalingConfig, l PlanLimits) error {
+// ValidateScaling checks a scaling config against the plan limits, relative
+// to the saved config: without the paid feature, what is already saved may be
+// kept or reduced (e.g. after a plan downgrade) but not raised — HPA stays
+// editable while already on, with min/max replicas at most the saved ones,
+// and fixed replicas may go up to the saved count.
+func ValidateScaling(in, saved ScalingConfig, l PlanLimits) error {
 	switch in.Method {
 	case ScaleHPA:
-		if !l.Autoscaling {
+		keeps := saved.Method == ScaleHPA && in.HPA.MinReplicas <= saved.HPA.MinReplicas && in.HPA.MaxReplicas <= saved.HPA.MaxReplicas
+		if !l.Autoscaling && !keeps {
 			return planRequired("Autoscaling is not included in your plan.")
 		}
 		h := in.HPA
@@ -287,7 +295,7 @@ func ValidateScaling(in ScalingConfig, l PlanLimits) error {
 		if in.FixedReplicas < minReplicas || in.FixedReplicas > maxReplicas {
 			return errf(CodeBadRequest, "replicas must be between %d and %d", minReplicas, maxReplicas)
 		}
-		if in.FixedReplicas > l.MaxReplicas {
+		if in.FixedReplicas > max(l.MaxReplicas, saved.FixedReplicas) {
 			return planRequired("Running more than %d replica is not included in your plan.", l.MaxReplicas)
 		}
 	default:
@@ -307,7 +315,7 @@ func (s *Service) UpdateScaling(ctx context.Context, webAppID, trackID, env stri
 	if err != nil {
 		return nil, err
 	}
-	if err := ValidateScaling(in, l); err != nil {
+	if err := ValidateScaling(in, *toScaling(b.Spec), l); err != nil {
 		return nil, err
 	}
 	// Autoscaling needs the HPA trait in the bound release (strict); so does
