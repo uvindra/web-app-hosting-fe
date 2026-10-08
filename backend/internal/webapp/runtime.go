@@ -117,9 +117,13 @@ func PodFromObject(name string, obj map[string]any) Pod {
 			c, _ := containers[0].(map[string]any)
 			res, _ := c["resources"].(map[string]any)
 			lim, _ := res["limits"].(map[string]any)
+			req, _ := res["requests"].(map[string]any)
 			cpu, _ := lim["cpu"].(string)
 			mem, _ := lim["memory"].(string)
 			p.CPULimitMillicores, p.MemoryLimitBytes = ParseCPU(cpu), ParseMemory(mem)
+			cpu, _ = req["cpu"].(string)
+			mem, _ = req["memory"].(string)
+			p.CPURequestMillicores, p.MemoryRequestBytes = ParseCPU(cpu), ParseMemory(mem)
 		}
 	}
 	p.Ready = itoa(ready) + "/" + itoa(total)

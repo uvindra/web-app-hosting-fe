@@ -180,16 +180,20 @@ type PodCondition struct {
 }
 
 type Pod struct {
-	Name               string         `json:"name"`
-	Phase              string         `json:"phase"`
-	Ready              string         `json:"ready"`
-	Restarts           int            `json:"restarts"`
-	StartedAt          string         `json:"startedAt"`
-	CPUUsageMillicores int64          `json:"cpuUsageMillicores"`
-	CPULimitMillicores int64          `json:"cpuLimitMillicores"`
-	MemoryUsageBytes   int64          `json:"memoryUsageBytes"`
-	MemoryLimitBytes   int64          `json:"memoryLimitBytes"`
-	Conditions         []PodCondition `json:"conditions"`
+	Name      string `json:"name"`
+	Phase     string `json:"phase"`
+	Ready     string `json:"ready"`
+	Restarts  int    `json:"restarts"`
+	StartedAt string `json:"startedAt"`
+	// CPUUsageMillicores / MemoryUsageBytes are absent until usage metrics
+	// exist (P1); nil means "not available", never 0.
+	CPUUsageMillicores   *int64         `json:"cpuUsageMillicores,omitempty"`
+	CPURequestMillicores int64          `json:"cpuRequestMillicores"`
+	CPULimitMillicores   int64          `json:"cpuLimitMillicores"`
+	MemoryUsageBytes     *int64         `json:"memoryUsageBytes,omitempty"`
+	MemoryRequestBytes   int64          `json:"memoryRequestBytes"`
+	MemoryLimitBytes     int64          `json:"memoryLimitBytes"`
+	Conditions           []PodCondition `json:"conditions"`
 }
 
 type PodEvent struct {
@@ -244,14 +248,15 @@ type ScalingConfig struct {
 }
 
 type ReplicaPod struct {
-	Name            string  `json:"name"`
-	Status          string  `json:"status"`
-	ReadyContainers int     `json:"readyContainers"`
-	TotalContainers int     `json:"totalContainers"`
-	Restarts        int     `json:"restarts"`
-	CPUUsage        float64 `json:"cpuUsage"`
-	MemoryUsageMb   float64 `json:"memoryUsageMb"`
-	StartedAt       string  `json:"startedAt"`
+	Name            string `json:"name"`
+	Status          string `json:"status"`
+	ReadyContainers int    `json:"readyContainers"`
+	TotalContainers int    `json:"totalContainers"`
+	Restarts        int    `json:"restarts"`
+	// CPUUsage / MemoryUsageMb are absent until usage metrics exist (P1).
+	CPUUsage      *float64 `json:"cpuUsage,omitempty"`
+	MemoryUsageMb *float64 `json:"memoryUsageMb,omitempty"`
+	StartedAt     string   `json:"startedAt"`
 }
 
 type ConfigEntry struct {

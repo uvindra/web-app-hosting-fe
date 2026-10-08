@@ -22,9 +22,14 @@ export interface Pod {
   ready: string;
   restarts: number;
   startedAt: string;
-  cpuUsageMillicores: number;
+  /** Absent until usage metrics exist (P1): `undefined` means "not available", never 0. */
+  cpuUsageMillicores?: number;
+  /** First container's request/limit; 0 when unset. */
+  cpuRequestMillicores: number;
   cpuLimitMillicores: number;
-  memoryUsageBytes: number;
+  /** Absent until usage metrics exist (P1). */
+  memoryUsageBytes?: number;
+  memoryRequestBytes: number;
   memoryLimitBytes: number;
   conditions: PodCondition[];
 }
@@ -37,10 +42,12 @@ export interface PodEvent {
   lastSeen: string;
 }
 
+/** Totals across pods. `used`/`percent` are `undefined` unless every pod reports usage. */
 export interface UsageSummary {
-  used: number;
+  used?: number;
+  request: number;
   limit: number;
-  percent: number;
+  percent?: number;
 }
 
 export interface RuntimeTarget {

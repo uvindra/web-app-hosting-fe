@@ -1446,10 +1446,12 @@ components:
         ready: {type: string}
         restarts: {type: integer}
         startedAt: {type: string}
-        cpuUsageMillicores: {type: integer}
-        cpuLimitMillicores: {type: integer}
-        memoryUsageBytes: {type: integer}
-        memoryLimitBytes: {type: integer}
+        cpuUsageMillicores: {type: integer, description: "Absent until usage metrics are available (P1)."}
+        cpuRequestMillicores: {type: integer, description: "First container's CPU request; 0 when unset."}
+        cpuLimitMillicores: {type: integer, description: "First container's CPU limit; 0 when unset."}
+        memoryUsageBytes: {type: integer, description: "Absent until usage metrics are available (P1)."}
+        memoryRequestBytes: {type: integer, description: "First container's memory request; 0 when unset."}
+        memoryLimitBytes: {type: integer, description: "First container's memory limit; 0 when unset."}
         conditions:
           type: array
           items:
@@ -1517,8 +1519,8 @@ components:
         readyContainers: {type: integer}
         totalContainers: {type: integer}
         restarts: {type: integer}
-        cpuUsage: {type: number}
-        memoryUsageMb: {type: number}
+        cpuUsage: {type: number, description: "vCPU; absent until usage metrics are available (P1)."}
+        memoryUsageMb: {type: number, description: "Absent until usage metrics are available (P1)."}
         startedAt: {type: string}
     ConfigEntry:
       type: object

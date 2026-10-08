@@ -5,13 +5,13 @@ export function formatMillicores(millicores: number): string {
   return `${(millicores / 1000).toFixed(2)} vCPU`;
 }
 
-/** Bytes -> binary-unit string ("128.00 MiB"). */
+/** Bytes -> binary-unit string, at most two decimals ("350 MiB", "1.5 GiB"). */
 export function formatBytes(bytes: number): string {
   if (bytes <= 0) return '0 Bytes';
   const units = ['Bytes', 'KiB', 'MiB', 'GiB', 'TiB'];
   const exponent = Math.min(Math.floor(Math.log2(bytes) / 10), units.length - 1);
   const value = bytes / 1024 ** exponent;
-  return `${value.toFixed(exponent === 0 ? 0 : 2)} ${units[exponent]}`;
+  return `${Number(value.toFixed(exponent === 0 ? 0 : 2))} ${units[exponent]}`;
 }
 
 /** Used/limit as a 0-100 integer, clamped; 0 when there is no limit. */
@@ -20,21 +20,37 @@ export function usagePercent(used: number, limit: number): number {
   return Math.min(100, Math.round((used / limit) * 100));
 }
 
-export function summarize(used: number, limit: number): UsageSummary {
-  return { used, limit, percent: usagePercent(used, limit) };
+/** "Request 350 MiB · Limit 1 GiB", skipping unset (0) values; "No request or limit set" when neither is set. */
+export function formatAllocation(request: number, limit: number, format: (n: number) => string): string {
+  const parts = [request > 0 ? `Request ${format(request)}` : '', limit > 0 ? `Limit ${format(limit)}` : ''].filter(Boolean);
+  return parts.length > 0 ? parts.join(' · ') : 'No request or limit set';
 }
 
-/** Aggregate CPU/memory usage across all pods. */
+function summarize(pods: Pod[], used: (p: Pod) => number | undefined, request: (p: Pod) => number, limit: (p: Pod) => number): UsageSummary {
+  const total = (pick: (p: Pod) => number) => pods.reduce((sum, p) => sum + pick(p), 0);
+  const summary: UsageSummary = { request: total(request), limit: total(limit) };
+  const usages = pods.map(used);
+  if (pods.length > 0 && usages.every((u): u is number => u !== undefined)) {
+    summary.used = usages.reduce((sum, u) => sum + u, 0);
+    summary.percent = usagePercent(summary.used, summary.limit);
+  }
+  return summary;
+}
+
+/** Totals CPU/memory across all pods. Usage is only reported when every pod has it (metrics are P1). */
 export function aggregateUsage(pods: Pod[]): { cpu: UsageSummary; memory: UsageSummary } {
-  const sum = (pick: (p: Pod) => number): number => pods.reduce((total, p) => total + pick(p), 0);
   return {
     cpu: summarize(
-      sum((p) => p.cpuUsageMillicores),
-      sum((p) => p.cpuLimitMillicores),
+      pods,
+      (p) => p.cpuUsageMillicores,
+      (p) => p.cpuRequestMillicores,
+      (p) => p.cpuLimitMillicores,
     ),
     memory: summarize(
-      sum((p) => p.memoryUsageBytes),
-      sum((p) => p.memoryLimitBytes),
+      pods,
+      (p) => p.memoryUsageBytes,
+      (p) => p.memoryRequestBytes,
+      (p) => p.memoryLimitBytes,
     ),
   };
 }

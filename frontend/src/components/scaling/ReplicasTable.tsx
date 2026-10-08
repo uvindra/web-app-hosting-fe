@@ -64,7 +64,7 @@ export default function ReplicasTable({ track, environment }: ReplicasTableProps
           No running replicas.
         </Typography>
       ) : (
-        <ListingTable.Container>
+        <ListingTable.Container sx={{ overflowX: 'auto' }}>
           <ListingTable size="small">
             <ListingTable.Head>
               <ListingTable.Row>
@@ -81,12 +81,13 @@ export default function ReplicasTable({ track, environment }: ReplicasTableProps
               {pods.map((pod) => (
                 <ListingTable.Row key={pod.name}>
                   <ListingTable.Cell>
-                    <Typography variant="body2" sx={{ fontWeight: 500, fontFamily: 'monospace' }}>
+                    <Typography variant="body2" sx={{ fontWeight: 500, fontFamily: 'monospace', wordBreak: 'break-all' }}>
                       {pod.name}
                     </Typography>
                   </ListingTable.Cell>
-                  <ListingTable.Cell>{pod.cpuUsage.toFixed(3)} vCPU</ListingTable.Cell>
-                  <ListingTable.Cell>{pod.memoryUsageMb} MB</ListingTable.Cell>
+                  {/* Usage metrics arrive in P1: "—" until the BFF reports them, never a fake 0. */}
+                  <ListingTable.Cell>{pod.cpuUsage === undefined ? '—' : `${pod.cpuUsage.toFixed(3)} vCPU`}</ListingTable.Cell>
+                  <ListingTable.Cell>{pod.memoryUsageMb === undefined ? '—' : `${pod.memoryUsageMb} MB`}</ListingTable.Cell>
                   <ListingTable.Cell>
                     <Chip icon={pod.status === 'Running' ? <CircleCheck size={14} /> : <Info size={14} />} label={pod.status} size="small" variant="outlined" color={pod.status === 'Running' ? 'success' : 'default'} />
                   </ListingTable.Cell>

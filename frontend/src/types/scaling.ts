@@ -31,9 +31,9 @@ export interface ReplicaPod {
   readyContainers: number;
   totalContainers: number;
   restarts: number;
-  /** vCPU, e.g. 0.02 */
-  cpuUsage: number;
-  /** MB */
-  memoryUsageMb: number;
+  /** vCPU, e.g. 0.02. Absent until usage metrics exist (P1). */
+  cpuUsage?: number;
+  /** MB. Absent until usage metrics exist (P1). */
+  memoryUsageMb?: number;
   startedAt: string;
 }

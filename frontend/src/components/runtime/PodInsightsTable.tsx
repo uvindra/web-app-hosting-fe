@@ -1,10 +1,10 @@
 import { useState, type JSX } from 'react';
-import { Button, Chip, ListingTable, Stack, Typography } from '@wso2/oxygen-ui';
+import { Chip, IconButton, ListingTable, Stack, Tooltip, Typography } from '@wso2/oxygen-ui';
 import EmptyListing from '../EmptyListing';
 import UsageBar from './UsageBar';
 import PodLogsDrawer from './PodLogsDrawer';
 import PodEventsDrawer from './PodEventsDrawer';
-import { Server } from '@wso2/oxygen-ui-icons-react';
+import { Activity, ScrollText, Server } from '@wso2/oxygen-ui-icons-react';
 import { formatRelativeTime } from '../../utils/formatRelativeTime';
 import { usagePercent } from '../../utils/podMetrics';
 import type { Pod } from '../../types/runtime';
@@ -21,6 +21,18 @@ type Drawer = { kind: 'logs' | 'events'; podName: string } | null;
 
 const PHASE_COLOR = { Running: 'success', Pending: 'warning', Failed: 'error', Succeeded: 'default' } as const;
 
+/** A usage bar once metrics exist (P1); "—" until then, never a fake 0%. */
+function UsageCell({ used, limit, label }: { used: number | undefined; limit: number; label: string }): JSX.Element {
+  if (used === undefined) {
+    return (
+      <Typography variant="body2" color="text.secondary" aria-label={`${label}: not available`}>
+        —
+      </Typography>
+    );
+  }
+  return <UsageBar percent={usagePercent(used, limit)} label={label} />;
+}
+
 export default function PodInsightsTable({ track, environment, pods }: PodInsightsTableProps): JSX.Element {
   const [drawer, setDrawer] = useState<Drawer>(null);
   const drawerPod = drawer ? pods.find((p) => p.name === drawer.podName) : undefined;
@@ -34,7 +46,8 @@ export default function PodInsightsTable({ track, environment, pods }: PodInsigh
       <Typography variant="h6" sx={{ mb: 1.5 }}>
         Pods
       </Typography>
-      <ListingTable.Container>
+      {/* Scrolls inside its own container rather than clipping the actions column on narrow pages. */}
+      <ListingTable.Container sx={{ overflowX: 'auto' }}>
         <ListingTable>
           <ListingTable.Head>
             <ListingTable.Row>
@@ -51,27 +64,31 @@ export default function PodInsightsTable({ track, environment, pods }: PodInsigh
           <ListingTable.Body>
             {pods.map((p) => (
               <ListingTable.Row key={p.name}>
-                <ListingTable.Cell sx={{ fontFamily: 'monospace', minWidth: 240, wordBreak: 'break-all' }}>{p.name}</ListingTable.Cell>
+                <ListingTable.Cell sx={{ fontFamily: 'monospace', minWidth: 160, wordBreak: 'break-all' }}>{p.name}</ListingTable.Cell>
                 <ListingTable.Cell>
                   <Chip size="small" label={p.phase} color={PHASE_COLOR[p.phase]} />
                 </ListingTable.Cell>
                 <ListingTable.Cell>{p.ready}</ListingTable.Cell>
                 <ListingTable.Cell>{p.restarts}</ListingTable.Cell>
                 <ListingTable.Cell>
-                  <UsageBar percent={usagePercent(p.cpuUsageMillicores, p.cpuLimitMillicores)} label={`${p.name} CPU`} />
+                  <UsageCell used={p.cpuUsageMillicores} limit={p.cpuLimitMillicores} label={`${p.name} CPU`} />
                 </ListingTable.Cell>
                 <ListingTable.Cell>
-                  <UsageBar percent={usagePercent(p.memoryUsageBytes, p.memoryLimitBytes)} label={`${p.name} memory`} />
+                  <UsageCell used={p.memoryUsageBytes} limit={p.memoryLimitBytes} label={`${p.name} memory`} />
                 </ListingTable.Cell>
-                <ListingTable.Cell>{formatRelativeTime(p.startedAt)}</ListingTable.Cell>
+                <ListingTable.Cell sx={{ whiteSpace: 'nowrap' }}>{formatRelativeTime(p.startedAt)}</ListingTable.Cell>
                 <ListingTable.Cell align="right">
-                  <Stack direction="row" gap={1} justifyContent="flex-end">
-                    <Button size="small" onClick={() => setDrawer({ kind: 'logs', podName: p.name })}>
-                      Logs
-                    </Button>
-                    <Button size="small" onClick={() => setDrawer({ kind: 'events', podName: p.name })}>
-                      Events
-                    </Button>
+                  <Stack direction="row" gap={0.5} justifyContent="flex-end">
+                    <Tooltip title="Logs">
+                      <IconButton size="small" aria-label={`Logs for ${p.name}`} onClick={() => setDrawer({ kind: 'logs', podName: p.name })}>
+                        <ScrollText size={16} />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Events">
+                      <IconButton size="small" aria-label={`Events for ${p.name}`} onClick={() => setDrawer({ kind: 'events', podName: p.name })}>
+                        <Activity size={16} />
+                      </IconButton>
+                    </Tooltip>
                   </Stack>
                 </ListingTable.Cell>
               </ListingTable.Row>

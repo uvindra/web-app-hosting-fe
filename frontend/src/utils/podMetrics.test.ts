@@ -1,16 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import type { Pod } from '../types/runtime';
-import { aggregateUsage, formatBytes, formatMillicores, usagePercent } from './podMetrics';
+import { aggregateUsage, formatAllocation, formatBytes, formatMillicores, usagePercent } from './podMetrics';
 
-const pod = (cpu: number, cpuLimit: number, mem: number, memLimit: number): Pod => ({
+const pod = (usage: { cpu?: number; mem?: number }, cpuLimit = 100, memLimit = 100): Pod => ({
   name: 'p',
   phase: 'Running',
   ready: '1/1',
   restarts: 0,
   startedAt: '',
-  cpuUsageMillicores: cpu,
+  cpuUsageMillicores: usage.cpu,
+  cpuRequestMillicores: cpuLimit / 2,
   cpuLimitMillicores: cpuLimit,
-  memoryUsageBytes: mem,
+  memoryUsageBytes: usage.mem,
+  memoryRequestBytes: memLimit / 2,
   memoryLimitBytes: memLimit,
   conditions: [],
 });
@@ -20,16 +22,32 @@ describe('podMetrics', () => {
   it('formats bytes', () => {
     expect(formatBytes(0)).toBe('0 Bytes');
     expect(formatBytes(512)).toBe('512 Bytes');
-    expect(formatBytes(128 * 1024 ** 2)).toBe('128.00 MiB');
+    expect(formatBytes(128 * 1024 ** 2)).toBe('128 MiB');
+    expect(formatBytes(350 * 1024 ** 2)).toBe('350 MiB');
+    expect(formatBytes(1.5 * 1024 ** 3)).toBe('1.5 GiB');
   });
   it('clamps percent and handles no limit', () => {
     expect(usagePercent(5, 0)).toBe(0);
     expect(usagePercent(200, 100)).toBe(100);
     expect(usagePercent(25, 100)).toBe(25);
   });
-  it('aggregates pods', () => {
-    const agg = aggregateUsage([pod(50, 100, 10, 100), pod(50, 100, 30, 100)]);
-    expect(agg.cpu).toEqual({ used: 100, limit: 200, percent: 50 });
+  it('formats request and limit', () => {
+    expect(formatAllocation(350 * 1024 ** 2, 1024 ** 3, formatBytes)).toBe('Request 350 MiB · Limit 1 GiB');
+    expect(formatAllocation(0, 100, formatMillicores)).toBe('Limit 0.10 vCPU');
+    expect(formatAllocation(0, 0, formatMillicores)).toBe('No request or limit set');
+  });
+  it('aggregates pods with usage', () => {
+    const agg = aggregateUsage([pod({ cpu: 50, mem: 10 }), pod({ cpu: 50, mem: 30 })]);
+    expect(agg.cpu).toEqual({ used: 100, request: 100, limit: 200, percent: 50 });
     expect(agg.memory.percent).toBe(20);
+  });
+  it('reports no usage (not 0) when metrics are unavailable', () => {
+    const agg = aggregateUsage([pod({}), pod({})]);
+    expect(agg.cpu).toEqual({ request: 100, limit: 200 });
+    expect(agg.memory.used).toBeUndefined();
+    expect(aggregateUsage([]).cpu.used).toBeUndefined();
+  });
+  it('reports no usage when any pod lacks it', () => {
+    expect(aggregateUsage([pod({ cpu: 50, mem: 10 }), pod({})]).cpu.used).toBeUndefined();
   });
 });

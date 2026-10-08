@@ -82,11 +82,12 @@ func TestPromotionOrder(t *testing.T) {
 }
 
 func TestPodFromObject(t *testing.T) {
-	obj := mustJSON[map[string]any](t, `{"spec":{"containers":[{"resources":{"limits":{"cpu":"100m","memory":"1Gi"}}}]},
+	obj := mustJSON[map[string]any](t, `{"spec":{"containers":[{"resources":{"requests":{"cpu":"50m","memory":"350Mi"},"limits":{"cpu":"100m","memory":"1Gi"}}}]},
 	  "status":{"phase":"Running","startTime":"2026-10-07T09:00:00Z","containerStatuses":[{"ready":true,"restartCount":2}],
 	  "conditions":[{"type":"Ready","status":"True","lastTransitionTime":"2026-10-07T09:01:00Z"},{"type":"PodReadyToStartContainers","status":"True"}]}}`)
 	p := PodFromObject("pod-1", obj)
-	if p.Phase != "Running" || p.Ready != "1/1" || p.Restarts != 2 || p.CPULimitMillicores != 100 || p.MemoryLimitBytes != 1<<30 || len(p.Conditions) != 1 {
+	if p.Phase != "Running" || p.Ready != "1/1" || p.Restarts != 2 || p.CPULimitMillicores != 100 || p.MemoryLimitBytes != 1<<30 || len(p.Conditions) != 1 ||
+		p.CPURequestMillicores != 50 || p.MemoryRequestBytes != 350<<20 || p.CPUUsageMillicores != nil || p.MemoryUsageBytes != nil {
 		t.Fatalf("pod = %+v", p)
 	}
 }
