@@ -55,7 +55,9 @@ export function emptyForm(defaultMountPath = ''): ConfigFormState {
 }
 
 export function itemToForm(item: ConfigItem): ConfigFormState {
-  return { name: item.name, kind: item.kind, mountPath: item.mountPath ?? '', entries: item.entries.map((e) => ({ ...e })) };
+  // Only file items have a mount directory; for the others the (hidden) field starts empty.
+  const mountPath = item.kind === 'file' && item.mountPath !== undefined ? item.mountPath : '';
+  return { name: item.name, kind: item.kind, mountPath, entries: item.entries.map((e) => ({ ...e })) };
 }
 
 /** Human-readable problems that block saving; empty when valid. */

@@ -220,7 +220,7 @@ export default function CreateWebAppForm(): JSX.Element {
   // Public repos: look branches up only for a complete https://github.com/<owner>/<repo> URL, once typing
   // pauses — not per keystroke (the unauthenticated GitHub API allows 60 requests an hour).
   const publicRepoUrl = normalizeGitHubRepoUrl(useDebouncedValue(repoUrl, BRANCH_LOOKUP_DEBOUNCE_MS));
-  const branchQuery = isAuthenticatedGitHub ? { installationId: effectiveInstallationId, owner: gitOrganization, repo: repository } : { repoUrl: publicRepoUrl ?? '' };
+  const branchQuery = isAuthenticatedGitHub ? { installationId: effectiveInstallationId, owner: gitOrganization, repo: repository } : publicRepoUrl ? { repoUrl: publicRepoUrl } : {};
   const branches = useBranches(branchQuery, isAuthenticatedGitHub ? !!effectiveInstallationId && !!gitOrganization && !!repository : !!publicRepoUrl);
 
   const effectiveHandler = handlerEdited ? handler : toHandler(displayName);
@@ -335,9 +335,9 @@ export default function CreateWebAppForm(): JSX.Element {
           <Grid container spacing={3} sx={{ mb: 4 }}>
             {isAuthenticatedGitHub ? (
               <>
-                {(installations.data?.length ?? 0) > 1 && (
+                {(installations.data?.length ?? 0) > 1 && effectiveInstallationId !== undefined && (
                   <Grid size={{ xs: 12 }}>
-                    <Select fullWidth value={effectiveInstallationId ?? ''} onChange={(e) => setInstallationId(Number(e.target.value))} inputProps={{ 'aria-label': 'GitHub installation' }}>
+                    <Select fullWidth value={effectiveInstallationId} onChange={(e) => setInstallationId(Number(e.target.value))} inputProps={{ 'aria-label': 'GitHub installation' }}>
                       {(installations.data ?? []).map((i) => (
                         <MenuItem key={i.installationId} value={i.installationId}>
                           {i.githubAccount ?? `Installation ${i.installationId}`}

@@ -93,7 +93,7 @@ export default function ConfigList({ track, environment, isSpa = false }: { trac
                     <Stack direction="row" alignItems="center" gap={1}>
                       {item.name}
                       {item.kind === 'secret' && <Chip label="Secret" size="small" variant="outlined" color="warning" />}
-                      {item.kind === 'file' && <Chip label={`File · ${item.mountPath ?? ''}/${item.entries[0]?.key ?? ''}`} size="small" variant="outlined" />}
+                      {item.kind === 'file' && <Chip label={fileChipLabel(item)} size="small" variant="outlined" />}
                     </Stack>
                   </ListingTable.Cell>
                   <ListingTable.Cell sx={{ fontFamily: 'monospace' }}>{item.entries.map((e) => e.key).join(', ')}</ListingTable.Cell>
@@ -134,4 +134,11 @@ export default function ConfigList({ track, environment, isSpa = false }: { trac
       )}
     </>
   );
+}
+
+/** "File · <mount path>/<file name>" for a file config (just "File" if the BFF sent no mount path or file). */
+function fileChipLabel(item: ConfigItem): string {
+  const file = item.entries[0];
+  if (!item.mountPath || !file) return 'File';
+  return `File · ${item.mountPath}/${file.key}`;
 }
