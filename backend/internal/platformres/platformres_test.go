@@ -2,6 +2,7 @@ package platformres
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -29,7 +30,13 @@ func TestRenderBothProfiles(t *testing.T) {
 		}
 		meta := ct["metadata"].(map[string]any)
 		ann := meta["annotations"].(map[string]any)
-		if ann["web-app-hosting.wso2.com/ct-version"] != "1" {
+		if !strings.Contains(string(ctJSON), `"readinessProbe":{"failureThreshold"`) || !strings.Contains(string(ctJSON), "tcpSocket") {
+			t.Errorf("ct cloud=%v: missing default readiness probe", cloud)
+		}
+		if strings.Contains(string(ctJSON), "livenessProbe") {
+			t.Errorf("ct cloud=%v: unexpected liveness probe", cloud)
+		}
+		if ann["web-app-hosting.wso2.com/ct-version"] != strconv.Itoa(Version) {
 			t.Errorf("version annotation = %v", ann["web-app-hosting.wso2.com/ct-version"])
 		}
 		if meta["name"] != ComponentTypeName || wf["metadata"].(map[string]any)["name"] != SPAWorkflowName {

@@ -7,6 +7,9 @@
 #   - an in-memory /tmp emptyDir — the only writable path under readOnlyRootFilesystem;
 #   - default resources request 350Mi / limit 1Gi (shared by the app and /tmp);
 #   - replicas 1..5 (no scale-to-zero, D6);
+#   - a default TCP readiness probe on the workload's first endpoint port (no liveness probe), so a pod
+#     only receives traffic once the app listens. Its timings are environmentConfigs.readinessProbe;
+#     P1 health checks extend that object (e.g. an httpGet path) rather than adding a second probe;
 #   - our namespaced SPA workflow + the Paketo/GCP/Dockerfile ClusterWorkflows.
 #
 # Rendered by the BFF with Go text/template using double-square-bracket delimiters (CEL uses ${ }
@@ -81,6 +84,27 @@ spec:
         imagePullPolicy:
           type: string
           default: IfNotPresent
+        # Default readiness probe: TCP connect to the workload endpoint port.
+        readinessProbe:
+          type: object
+          default: {}
+          properties:
+            initialDelaySeconds:
+              type: integer
+              default: 2
+              minimum: 0
+            periodSeconds:
+              type: integer
+              default: 5
+              minimum: 1
+            timeoutSeconds:
+              type: integer
+              default: 2
+              minimum: 1
+            failureThreshold:
+              type: integer
+              default: 3
+              minimum: 1
   resources:
     - id: deployment
       template:
@@ -114,6 +138,13 @@ spec:
                   command: '${has(workload.container.command) ? workload.container.command : oc_omit()}'
                   args: '${has(workload.container.args) ? workload.container.args : oc_omit()}'
                   ports: '${workload.endpoints.map(endpoint, {"name": endpoint, "containerPort": workload.endpoints[endpoint].port, "protocol": workload.endpoints[endpoint].type == "UDP" ? "UDP" : "TCP"})}'
+                  readinessProbe:
+                    tcpSocket:
+                      port: '${workload.endpoints.map(name, workload.endpoints[name].port)[0]}'
+                    initialDelaySeconds: '${environmentConfigs.readinessProbe.initialDelaySeconds}'
+                    periodSeconds: '${environmentConfigs.readinessProbe.periodSeconds}'
+                    timeoutSeconds: '${environmentConfigs.readinessProbe.timeoutSeconds}'
+                    failureThreshold: '${environmentConfigs.readinessProbe.failureThreshold}'
                   securityContext:
                     readOnlyRootFilesystem: true
                     allowPrivilegeEscalation: false

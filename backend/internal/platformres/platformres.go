@@ -16,7 +16,8 @@ import (
 // Version is the shipped version of the ComponentType + workflow. Bump it on
 // every template change: orgs whose stored version is lower are upgraded on
 // their next web-app create.
-const Version = 1
+// v2: default TCP readiness probe.
+const Version = 2
 
 const (
 	ComponentTypeName = "web-app-hosting"

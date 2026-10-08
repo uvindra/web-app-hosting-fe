@@ -172,6 +172,13 @@ one card per pipeline environment) — no registry, no plugin indirection.
   - BFF: `CreateWebAppInput.docker {filePath, context}` (OpenAPI `DockerBuild`) feeds the dockerfile-builder's
     `docker.filePath` / `docker.context` (resolved against the component directory, rejected if outside the repo);
     `BuildConfig.docker` reports them; static build configs no longer report a Node version.
+- **Readiness probe (ComponentType v2):** pods reported Ready before the app listened, so the gateway answered 503
+  "connection refused" for a few seconds after each rollout (seen with a NodeJS/Paketo app).
+  - `deployment/web-app-hosting` now renders a TCP readiness probe on the workload's first endpoint port
+    (initialDelay 2s, period 5s, timeout 2s, failureThreshold 3); no liveness probe. The timings live in
+    `environmentConfigs.readinessProbe` so P1 health checks can extend that one object instead of adding a second probe.
+  - `platformres.Version` is 2, so each org's ComponentType (and SPA workflow) is upgraded on its next web-app create.
+  - Checked on k3d (OpenChoreo 1.3.0): a NodeJS sample deployed with the probe and a rolling restart served no 503s.
 - **Quick Deploy from samples failed silently:** the project page sent `sourceType: 'sample'`, which `api/webApps.ts`
   rejected before any request, and the handler had no `catch`.
   - Every sample entry point (project page, create options, import options) now uses `useCreateSampleWebApp`:
