@@ -303,12 +303,12 @@ export default function AppLayout(): JSX.Element {
                   label={plan}
                   color="warning"
                   size="medium"
-                  sx={{ fontWeight: 500, mx: 0.75, cursor: window.API_CONFIG.billingConsoleUrl ? 'pointer' : 'default' }}
-                  onClick={window.API_CONFIG.billingConsoleUrl ? () => window.open(window.API_CONFIG.billingConsoleUrl, '_blank', 'noopener') : undefined}
+                  sx={{ fontWeight: 500, mx: 0.75, cursor: upgradeHref !== undefined ? 'pointer' : 'default' }}
+                  onClick={upgradeHref !== undefined ? () => window.open(upgradeHref, '_blank', 'noopener') : undefined}
                 />
               </Tooltip>
             )}
-            {billingEnabled() && upgradeHref && gatingPlan?.type === 'free' && (
+            {billingEnabled() && upgradeHref !== undefined && gatingPlan?.type === 'free' && (
               <Tooltip title="Autoscaling, more replicas and resources, and more environments">
                 <Button variant="contained" size="small" href={upgradeHref} target="_blank" rel="noopener noreferrer" sx={{ mx: 0.75 }}>
                   Upgrade

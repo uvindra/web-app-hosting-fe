@@ -15,7 +15,7 @@ export default function PlanUpgradeHint({ message, onClose }: PlanUpgradeHintPro
       severity="info"
       onClose={onClose}
       action={
-        url ? (
+        url !== undefined ? (
           <Button color="inherit" size="small" href={url} target="_blank" rel="noopener noreferrer">
             Upgrade
           </Button>

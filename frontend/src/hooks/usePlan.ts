@@ -12,7 +12,9 @@ export function usePlanLimits(): PlanLimits | undefined {
   return usePlan().data?.limits;
 }
 
-/** Where the "Upgrade" links go; empty when no billing console is configured (local OpenChoreo). */
-export function upgradeUrl(): string {
-  return window.API_CONFIG?.billingConsoleUrl ?? '';
+/** Where the "Upgrade" links go; undefined when no billing console is configured (local OpenChoreo) — callers hide the link. */
+export function upgradeUrl(): string | undefined {
+  const url = window.API_CONFIG?.billingConsoleUrl;
+  if (typeof url !== 'string' || url.length === 0) return undefined;
+  return url;
 }

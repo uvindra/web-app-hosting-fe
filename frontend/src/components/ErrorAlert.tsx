@@ -2,6 +2,7 @@ import type { JSX } from 'react';
 import { Alert, Button } from '@wso2/oxygen-ui';
 import { isPlanRequired, isQuotaExceeded } from '../types/http';
 import PlanUpgradeHint from './PlanUpgradeHint';
+import { upgradeUrl } from '../hooks/usePlan';
 
 interface ErrorAlertProps {
   error: unknown;
@@ -17,14 +18,14 @@ interface ErrorAlertProps {
  */
 export default function ErrorAlert({ error, fallback, onClose }: ErrorAlertProps): JSX.Element {
   if (isQuotaExceeded(error)) {
-    const billingUrl = window.API_CONFIG?.billingConsoleUrl;
+    const billingUrl = upgradeUrl();
     return (
       <Alert
         severity="warning"
         role="alert"
         onClose={onClose}
         action={
-          billingUrl ? (
+          billingUrl !== undefined ? (
             <Button color="inherit" size="small" href={billingUrl} target="_blank" rel="noopener noreferrer">
               Upgrade
             </Button>
