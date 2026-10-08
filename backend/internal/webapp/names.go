@@ -4,7 +4,8 @@
 //
 //   - Web app = the set of track Components sharing label LabelWebApp=<handle>.
 //   - Track (D3) = one Component per branch: `<handle>` for the default track,
-//     `<handle>-<branch-slug>` for others (always use the returned name).
+//     `<handle>--<branch-slug>` for others (always use the returned name;
+//     tracks created before 2026-10-08 are `<handle>-<branch-slug>`).
 //   - Build = a WorkflowRun labelled with the track Component.
 //   - Deployment = the track Component's ReleaseBinding per environment; a
 //     build is deployed by cutting a ComponentRelease named after the run.
@@ -70,7 +71,9 @@ func Slug(s string, max int) string {
 	if out == "" {
 		out = "x"
 	}
-	if out == lower && len(out) <= max {
+	// Compare with the input as given: lowercasing loses information too
+	// (git branches "Dev" and "dev" are different).
+	if out == strings.TrimSpace(s) && len(out) <= max {
 		return out
 	}
 	sum := sha256.Sum256([]byte(s))
@@ -84,10 +87,22 @@ func Slug(s string, max int) string {
 // ValidHandle reports whether h is a valid web app / project handle.
 func ValidHandle(h string) bool { return len(h) <= maxHandle && handleRE.MatchString(h) }
 
+// trackSeparator joins a web app handle and a branch slug in a track
+// Component name. New web app handles cannot contain it (ValidNewWebAppHandle)
+// and Slug never produces it, so a track name can neither equal a web app's
+// default Component name nor another web app's track name.
+const trackSeparator = "--"
+
+// ValidNewWebAppHandle reports whether h can name a new web app: a valid
+// handle without the track separator.
+func ValidNewWebAppHandle(h string) bool {
+	return ValidHandle(h) && !strings.Contains(h, trackSeparator)
+}
+
 // TrackComponentName is the desired Component name for a track.
 func TrackComponentName(handle, branch string, isDefault bool) string {
 	if isDefault {
 		return handle
 	}
-	return handle + "-" + Slug(branch, 20)
+	return handle + trackSeparator + Slug(branch, 20)
 }

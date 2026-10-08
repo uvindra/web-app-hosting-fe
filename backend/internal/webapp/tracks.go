@@ -485,7 +485,13 @@ func (s *Service) createTrackComponent(ctx context.Context, project string, in t
 		Spec:     spec,
 	})
 	if errors.Is(err, openchoreo.ErrConflict) {
-		return nil, errf(CodeConflict, "a component named %q already exists", TrackComponentName(in.WebApp, in.Branch, in.IsDefault))
+		name := TrackComponentName(in.WebApp, in.Branch, in.IsDefault)
+		if in.IsDefault {
+			// Only a deployment track created before track names used
+			// trackSeparator can hold a web app's name.
+			return nil, errf(CodeConflict, "the name %q is already used by another web app's deployment track; choose another name", name)
+		}
+		return nil, errf(CodeConflict, "a component named %q already exists", name)
 	}
 	return comp, err
 }

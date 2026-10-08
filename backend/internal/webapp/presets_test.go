@@ -82,7 +82,7 @@ func TestSlugAndNames(t *testing.T) {
 	if long := Slug("a-very-long-branch-name-that-goes-on-and-on", 20); len(long) > 20 || !ValidHandle(long) {
 		t.Errorf("long slug %q", long)
 	}
-	if TrackComponentName("shop", "main", true) != "shop" || TrackComponentName("shop", "dev", false) != "shop-dev" {
+	if TrackComponentName("shop", "main", true) != "shop" || TrackComponentName("shop", "dev", false) != "shop--dev" {
 		t.Error("track names")
 	}
 }

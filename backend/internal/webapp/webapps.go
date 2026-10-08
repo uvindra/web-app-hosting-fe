@@ -138,8 +138,8 @@ func (s *Service) CreateWebApp(ctx context.Context, projectID string, in CreateW
 	if in.SourceType != "github" && in.SourceType != "public-git" {
 		return nil, errf(CodeNotSupported, "source type %q is not supported yet", in.SourceType)
 	}
-	if !ValidHandle(in.Handler) {
-		return nil, errf(CodeBadRequest, "invalid web app name %q: use lowercase letters, numbers and hyphens (max %d)", in.Handler, maxHandle)
+	if !ValidNewWebAppHandle(in.Handler) {
+		return nil, errf(CodeBadRequest, "invalid web app name %q: use lowercase letters, numbers and single hyphens (max %d)", in.Handler, maxHandle)
 	}
 	preset := Preset(in.BuildPreset)
 	if !preset.Valid() {

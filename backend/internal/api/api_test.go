@@ -392,7 +392,7 @@ func TestCreateReturnsBeforeFirstBuild(t *testing.T) {
 	pas.mu.Unlock()
 	start = time.Now()
 	code, obj, _ := call(t, srv, "POST", "/webapps/site/tracks", map[string]any{"branch": "b1"})
-	if code != 201 || obj["id"] != "site-b1" {
+	if code != 201 || obj["id"] != "site--b1" {
 		t.Fatalf("create track: %d %v", code, obj)
 	}
 	if d := time.Since(start); d > 300*time.Millisecond {
@@ -411,7 +411,7 @@ func TestCreateReturnsBeforeFirstBuild(t *testing.T) {
 			runs[w.Body["metadata"].(map[string]any)["labels"].(map[string]any)["openchoreo.dev/component"].(string)] = true
 		}
 	}
-	if !runs["site"] || !runs["site-b1"] {
+	if !runs["site"] || !runs["site--b1"] {
 		t.Fatalf("first builds = %v", runs)
 	}
 }
@@ -456,7 +456,7 @@ func TestDeletingTracksAreHidden(t *testing.T) {
 	pas.svc.WaitBackground()
 	pas.mu.Lock()
 	for _, c := range pas.components {
-		if md := c["metadata"].(map[string]any); md["name"] == "site-b1" {
+		if md := c["metadata"].(map[string]any); md["name"] == "site--b1" {
 			md["deletionTimestamp"] = time.Now().UTC().Format(time.RFC3339)
 		}
 	}
@@ -464,7 +464,7 @@ func TestDeletingTracksAreHidden(t *testing.T) {
 	if code, _, arr := call(t, srv, "GET", "/webapps/site/tracks", nil); code != 200 || len(arr) != 1 || arr[0].(map[string]any)["id"] != "site" {
 		t.Fatalf("tracks: %d %v", code, arr)
 	}
-	if code, obj, _ := call(t, srv, "GET", "/webapps/site/tracks/site-b1/build-config", nil); code != 404 {
+	if code, obj, _ := call(t, srv, "GET", "/webapps/site/tracks/site--b1/build-config", nil); code != 404 {
 		t.Fatalf("deleting track lookup: %d %v", code, obj)
 	}
 }
