@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -147,25 +148,8 @@ func (s *Service) BuildLogs(ctx context.Context, webAppID, trackID, buildID stri
 		return nil, errf(CodeNotFound, "build %q not found", buildID)
 	}
 	b := toBuildRun(*r, t.Branch)
-	live := true
-	for i := range b.Steps {
-		if b.Steps[i].Status == "pending" {
-			continue
-		}
-		entries, err := s.oc.GetWorkflowRunLogs(ctx, ns(ctx), buildID, b.Steps[i].Name)
-		if err != nil || (len(entries) == 0 && b.Steps[i].Status != BuildInProgress) {
-			live = false
-			break
-		}
-		for _, e := range entries {
-			b.Steps[i].Logs = append(b.Steps[i].Logs, strings.TrimRight(e.Log, "\n"))
-		}
-	}
-	if live && len(b.Steps) > 0 {
+	if len(b.Steps) > 0 && s.liveStepLogs(ctx, buildID, b.Steps) {
 		return &b, nil
-	}
-	for i := range b.Steps {
-		b.Steps[i].Logs = []string{}
 	}
 	start := time.Now().Add(-7 * 24 * time.Hour)
 	if r.Metadata.CreationTimestamp != nil {
@@ -179,6 +163,52 @@ func (s *Service) BuildLogs(ctx context.Context, webAppID, trackID, buildID stri
 	}
 	assignLogsToSteps(&b, r, entries)
 	return &b, nil
+}
+
+// stepLogConcurrency bounds the concurrent live step-log reads of one build.
+const stepLogConcurrency = 4
+
+// errNoLiveLogs stops the live step-log reads: a finished step without logs
+// means the run's pods are gone and the logs are archived.
+var errNoLiveLogs = errors.New("no live logs")
+
+// liveStepLogs fills steps' logs from OpenChoreo's live run logs, reading
+// the started steps concurrently (bounded) into their own slots, so step
+// order is kept. It reports false when any read fails or a finished step has
+// none (the caller then reads the archive).
+func (s *Service) liveStepLogs(ctx context.Context, runName string, steps []BuildStep) bool {
+	logs := make([][]string, len(steps))
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(stepLogConcurrency)
+	for i := range steps {
+		if steps[i].Status == "pending" {
+			continue
+		}
+		g.Go(func() error {
+			entries, err := s.oc.GetWorkflowRunLogs(gctx, ns(gctx), runName, steps[i].Name)
+			if err != nil {
+				return err
+			}
+			if len(entries) == 0 && steps[i].Status != BuildInProgress {
+				return errNoLiveLogs
+			}
+			lines := make([]string, 0, len(entries))
+			for _, e := range entries {
+				lines = append(lines, strings.TrimRight(e.Log, "\n"))
+			}
+			logs[i] = lines
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return false
+	}
+	for i := range steps {
+		if logs[i] != nil {
+			steps[i].Logs = logs[i]
+		}
+	}
+	return true
 }
 
 // assignLogsToSteps buckets archived log lines into steps by each task's

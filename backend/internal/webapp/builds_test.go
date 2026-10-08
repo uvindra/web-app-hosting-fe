@@ -1,6 +1,7 @@
 package webapp
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -78,5 +79,38 @@ func TestAutoDeployNeverRollsBack(t *testing.T) {
 	}
 	if got := autoState(e, "old"); got != autoDeploySuperseded {
 		t.Fatalf("old state = %q", got)
+	}
+}
+
+// TestBuildLogsReadsStepsConcurrently: live step logs are read concurrently
+// (bounded) and land in step order.
+func TestBuildLogsReadsStepsConcurrently(t *testing.T) {
+	e := newTestEnv(t)
+	e.addTrack("site", "site", "main", true)
+	e.addRun("r1", "site", "img", BuildSuccess, time.Now(), nil)
+	run := e.oc.Get("workflowruns", "r1")
+	var tasks []any
+	e.oc.stepLogs = map[string][]string{}
+	for i := range 6 {
+		name := fmt.Sprintf("step-%d", i)
+		tasks = append(tasks, map[string]any{"name": name, "phase": "Succeeded"})
+		e.oc.stepLogs[name] = []string{name + " a", name + " b"}
+	}
+	run["status"].(map[string]any)["tasks"] = tasks
+	e.oc.Put("workflowruns", run)
+	e.oc.logDelay = 50 * time.Millisecond
+
+	b, err := e.svc.BuildLogs(e.ctx, "site", "site", "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, st := range b.Steps {
+		name := fmt.Sprintf("step-%d", i)
+		if st.Name != name || len(st.Logs) != 2 || st.Logs[0] != name+" a" {
+			t.Fatalf("step %d = %+v", i, st)
+		}
+	}
+	if e.oc.maxInFlight < 2 || e.oc.maxInFlight > stepLogConcurrency {
+		t.Fatalf("peak concurrent step-log reads = %d", e.oc.maxInFlight)
 	}
 }

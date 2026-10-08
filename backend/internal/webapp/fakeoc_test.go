@@ -29,6 +29,11 @@ type fakeOC struct {
 	// beforeGenerate runs (unlocked) before a release snapshot is taken.
 	beforeGenerate func(component, release string)
 	deletes        []string // "collection/name"
+	// stepLogs answers workflowruns/{name}/logs?task= (after logDelay);
+	// maxInFlight records the peak concurrency of those reads.
+	stepLogs              map[string][]string
+	logDelay              time.Duration
+	inFlight, maxInFlight int
 }
 
 func newFakeOC() *fakeOC {
@@ -128,6 +133,10 @@ func (f *fakeOC) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if raw, _ := io.ReadAll(r.Body); len(raw) > 0 {
 		_ = json.Unmarshal(raw, &body)
 	}
+	if len(parts) == 3 && parts[0] == "workflowruns" && parts[2] == "logs" {
+		f.serveStepLogs(w, r.URL.Query().Get("task"))
+		return
+	}
 	if len(parts) == 3 && parts[0] == "components" && parts[2] == "generate-release" && r.Method == http.MethodPost {
 		f.generate(w, parts[1], body)
 		return
@@ -188,6 +197,23 @@ func (f *fakeOC) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, 404, map[string]any{"error": "unhandled " + r.Method + " " + rest})
 	}
+}
+
+func (f *fakeOC) serveStepLogs(w http.ResponseWriter, task string) {
+	f.mu.Lock()
+	f.inFlight++
+	f.maxInFlight = max(f.maxInFlight, f.inFlight)
+	f.mu.Unlock()
+	time.Sleep(f.logDelay)
+	f.mu.Lock()
+	f.inFlight--
+	lines := f.stepLogs[task]
+	f.mu.Unlock()
+	out := []map[string]any{}
+	for _, l := range lines {
+		out = append(out, map[string]any{"log": l + "\n"})
+	}
+	writeJSON(w, 200, out)
 }
 
 func (f *fakeOC) generate(w http.ResponseWriter, component string, body map[string]any) {
