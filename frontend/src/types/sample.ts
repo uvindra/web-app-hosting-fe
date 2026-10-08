@@ -1,3 +1,5 @@
+import type { BuildPreset } from './webApp';
+
 export interface Sample {
   id: string;
   name: string;
@@ -6,8 +8,10 @@ export interface Sample {
   repoUrl: string;
   branch: string;
   componentDirectory: string;
-  buildPreset: import('./webApp').BuildPreset;
-  buildCommand: string;
-  buildPath: string;
+  buildPreset: BuildPreset;
+  /** SPA presets only (see `constants/buildPresets`). */
+  buildCommand?: string;
+  buildPath?: string;
+  nodeVersion?: string;
   port: number;
 }

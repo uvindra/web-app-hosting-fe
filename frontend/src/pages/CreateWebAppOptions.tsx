@@ -5,11 +5,10 @@ import { ArrowLeft, Container, GitBranch } from '@wso2/oxygen-ui-icons-react';
 import EmptyListing from '../components/EmptyListing';
 import SampleCard from '../components/SampleCard';
 import { useProjectByHandler } from '../hooks/useProjects';
-import { useCreateWebApp } from '../hooks/useWebApps';
+import { useCreateSampleWebApp } from '../hooks/useWebApps';
 import { useSamples } from '../hooks/useSamples';
 import { hasProject, useScope } from '../nav';
 import { importWebAppUrl, projectHomeUrl, webAppOverviewUrl } from '../paths';
-import { sampleToInput } from '../utils/sampleInput';
 import ErrorAlert from '../components/ErrorAlert';
 import type { Sample } from '../types/sample';
 
@@ -24,7 +23,7 @@ export default function CreateWebAppOptions(): JSX.Element {
   const { data: project, isLoading: loadingProject } = useProjectByHandler(scope.org, projectHandler);
   const projectId = project?.id ?? '';
   const { data: samples, isLoading: loadingSamples } = useSamples();
-  const createWebApp = useCreateWebApp(projectId);
+  const createSample = useCreateSampleWebApp(projectId);
 
   if (loadingProject) {
     return (
@@ -46,7 +45,7 @@ export default function CreateWebAppOptions(): JSX.Element {
     setDeployingSampleId(sample.id);
     setSampleError(null);
     try {
-      const webApp = await createWebApp.mutateAsync(sampleToInput(sample));
+      const webApp = await createSample.mutateAsync(sample);
       navigate(webAppOverviewUrl(scope.org, project.handler, webApp.handler));
     } catch (err) {
       setSampleError(err);

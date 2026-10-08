@@ -19,8 +19,8 @@ export async function fetchWebApp(projectId: string, webAppId: string): Promise<
 
 /** Creates the web app (its default track) and starts its first build. Rejects with a 402 HttpError when over quota. */
 export async function createWebApp(projectId: string, input: CreateWebAppInput): Promise<WebApp> {
-  if (input.sourceType !== 'github' && input.sourceType !== 'public-git') {
-    throw new Error('Only Git repositories are supported in this release.');
+  if (input.sourceType === 'docker') {
+    throw new Error('Docker image import is not supported in this release.');
   }
   return webAppHostingClient.post<WebApp>(`/projects/${enc(projectId)}/webapps`, input);
 }

@@ -1,5 +1,7 @@
 import type { Sample } from '../types/sample';
 
+// Each sample is a directory of wso2/choreo-samples (checked to exist on `main`); the build settings match the
+// sample's own package.json / angular.json / Dockerfile (all build with Node 18).
 export const MOCK_SAMPLES: Sample[] = [
   {
     id: 'sample-react-spa',
@@ -12,6 +14,7 @@ export const MOCK_SAMPLES: Sample[] = [
     buildPreset: 'react',
     buildCommand: 'npm run build',
     buildPath: '/build',
+    nodeVersion: '18',
     port: 8080,
   },
   {
@@ -25,6 +28,7 @@ export const MOCK_SAMPLES: Sample[] = [
     buildPreset: 'vuejs',
     buildCommand: 'npm run build',
     buildPath: '/dist',
+    nodeVersion: '18',
     port: 8080,
   },
   {
@@ -37,7 +41,9 @@ export const MOCK_SAMPLES: Sample[] = [
     componentDirectory: '/angular-single-page-app',
     buildPreset: 'angular',
     buildCommand: 'npm run build',
-    buildPath: '/dist',
+    // angular.json: "outputPath": "dist/angular-spa"
+    buildPath: '/dist/angular-spa',
+    nodeVersion: '18',
     port: 8080,
   },
   {
@@ -48,9 +54,8 @@ export const MOCK_SAMPLES: Sample[] = [
     repoUrl: 'https://github.com/wso2/choreo-samples/tree/main/hello-world-go-webapp',
     branch: 'main',
     componentDirectory: '/hello-world-go-webapp',
+    // Built by the Go buildpack (no build command); main.go listens on :8080.
     buildPreset: 'go',
-    buildCommand: 'go build -o app',
-    buildPath: '/',
     port: 8080,
   },
 ];

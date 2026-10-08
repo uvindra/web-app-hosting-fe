@@ -172,6 +172,15 @@ one card per pipeline environment) — no registry, no plugin indirection.
   - BFF: `CreateWebAppInput.docker {filePath, context}` (OpenAPI `DockerBuild`) feeds the dockerfile-builder's
     `docker.filePath` / `docker.context` (resolved against the component directory, rejected if outside the repo);
     `BuildConfig.docker` reports them; static build configs no longer report a Node version.
+- **Quick Deploy from samples failed silently:** the project page sent `sourceType: 'sample'`, which `api/webApps.ts`
+  rejected before any request, and the handler had no `catch`.
+  - Every sample entry point (project page, create options, import options) now uses `useCreateSampleWebApp`:
+    `utils/sampleInput.createFromSample` maps the sample to a public-Git create (`sampleToInput`, build fields via
+    `toBuildInput`) and, on a 409 name collision (the sample was deployed before), retries with a short random
+    suffix (`react-spa-x7k2`); pages navigate to the returned handle. Errors, including 402 quota, show in an
+    `ErrorAlert`. The `sample` source type is gone from `CreateWebAppInput`.
+  - Samples (checked against `wso2/choreo-samples@main`): React `/build`, Vue `/dist`, Angular `/dist/angular-spa`
+    (from its angular.json; was `/dist`), all Node 18; Go via the Go buildpack on 8080 with no build command.
 - **Stale scale-to-zero text:** removed "Scale to zero is enabled …" from the Deploy page's environment cards
   (`DeployEnvironmentCard`); scale-to-zero was dropped (D6, see 2026-10-06).
 

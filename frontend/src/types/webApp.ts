@@ -1,6 +1,6 @@
 export type WebAppStatus = 'active' | 'deploying' | 'not-deployed' | 'failed';
 
-export type WebAppSourceType = 'github' | 'public-git' | 'docker' | 'sample';
+export type WebAppSourceType = 'github' | 'public-git' | 'docker';
 
 export type BuildPreset = 'nodejs' | 'react' | 'angular' | 'dotnet' | 'vuejs' | 'python' | 'go' | 'ruby' | 'php' | 'springboot' | 'static' | 'docker';
 
@@ -69,14 +69,8 @@ export interface CreateWebAppDockerInput {
   port: number;
 }
 
-export interface CreateWebAppSampleInput {
-  sourceType: 'sample';
-  sampleId: string;
-  displayName: string;
-  handler: string;
-}
-
-export type CreateWebAppInput = CreateWebAppGitInput | CreateWebAppDockerInput | CreateWebAppSampleInput;
+/** Samples are created as public-Git web apps (`utils/sampleInput`). */
+export type CreateWebAppInput = CreateWebAppGitInput | CreateWebAppDockerInput;
 
 export interface Build {
   id: string;

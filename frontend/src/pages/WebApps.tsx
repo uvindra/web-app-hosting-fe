@@ -6,13 +6,13 @@ import SearchField from '../components/SearchField';
 import EmptyListing from '../components/EmptyListing';
 import SampleCard from '../components/SampleCard';
 import { useProjectByHandler } from '../hooks/useProjects';
-import { useWebApps, useCreateWebApp } from '../hooks/useWebApps';
+import { useWebApps, useCreateSampleWebApp } from '../hooks/useWebApps';
+import ErrorAlert from '../components/ErrorAlert';
 import { useSamples } from '../hooks/useSamples';
 import { hasProject, useScope } from '../nav';
 import { newWebAppUrl, webAppOverviewUrl } from '../paths';
 import { formatRelativeTime } from '../utils/formatRelativeTime';
 import { getStatusColor } from '../utils/statusColor';
-import { toHandler } from '../utils/toHandler';
 import type { WebApp, WebAppStatus } from '../types/webApp';
 import type { Sample } from '../types/sample';
 
@@ -33,12 +33,13 @@ export default function WebApps(): JSX.Element {
   const projectHandler = hasProject(scope) ? scope.project : '';
   const [query, setQuery] = useState('');
   const [deployingSampleId, setDeployingSampleId] = useState<string | null>(null);
+  const [sampleError, setSampleError] = useState<unknown>(null);
 
   const { data: project, isLoading: loadingProject } = useProjectByHandler(scope.org, projectHandler);
   const projectId = project?.id ?? '';
   const { data: webApps, isLoading: loadingWebApps, isError } = useWebApps(projectId);
   const { data: samples } = useSamples();
-  const createWebApp = useCreateWebApp(projectId);
+  const createSample = useCreateSampleWebApp(projectId);
 
   if (loadingProject || (loadingWebApps && !!projectId)) {
     return (
@@ -69,14 +70,13 @@ export default function WebApps(): JSX.Element {
 
   const handleQuickDeploy = async (sample: Sample) => {
     setDeployingSampleId(sample.id);
+    setSampleError(null);
     try {
-      const webApp = await createWebApp.mutateAsync({
-        sourceType: 'sample',
-        sampleId: sample.id,
-        displayName: sample.name,
-        handler: toHandler(sample.name),
-      });
+      // The handler may carry a suffix when this sample was deployed before: navigate to the returned one.
+      const webApp = await createSample.mutateAsync(sample);
       navigate(webAppOverviewUrl(scope.org, project.handler, webApp.handler));
+    } catch (err) {
+      setSampleError(err);
     } finally {
       setDeployingSampleId(null);
     }
@@ -166,6 +166,11 @@ export default function WebApps(): JSX.Element {
           <Typography variant="h6" component="h2" sx={{ fontWeight: 600, mb: 2 }}>
             Create from a sample
           </Typography>
+          {sampleError !== null && (
+            <Box sx={{ mb: 2 }}>
+              <ErrorAlert error={sampleError} fallback="Failed to create the sample web app." onClose={() => setSampleError(null)} />
+            </Box>
+          )}
           <Grid container spacing={2}>
             {samples.map((sample) => (
               <Grid key={sample.id} size={{ xs: 12, sm: 6, md: 3 }}>
