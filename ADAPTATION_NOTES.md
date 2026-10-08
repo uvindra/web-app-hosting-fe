@@ -130,6 +130,14 @@ one card per pipeline environment) — no registry, no plugin indirection.
 
 ## Changelog
 
+### 2026-10-08 — Fix post-login redirect
+
+- **Full URL saved:** `ProtectedRoute` saved the full `window.location.href` as the page to return to after sign-in. `SignIn` then passed it to react-router's `navigate`, which expects an in-app path. Deep links didn't restore after login.
+  - `saveRedirectUrl` now stores `/path?query#hash`, same-origin only.
+  - `getAndClearRedirectUrl` only returns same-app paths.
+- **Local org skipped:** the ipaas-inherited guard that skips the synthetic `default` org now steps aside when `default` is the configured org (`ORG_HANDLE=default`, the local OpenChoreo target).
+- Test: `src/auth/redirectUrl.test.ts`.
+
 ### 2026-10-07 — P0: wired to the BFF
 
 - **Why:** the Web App Hosting BFF (`backend/`) exists now; P0 makes the core loop real.

@@ -243,22 +243,30 @@ export async function revokeToken(): Promise<void> {
   }
 }
 
+/**
+ * Remembers where to return after sign-in, as an in-app path (`/path?query#hash`) since the result
+ * is handed to react-router's `navigate`. Cross-origin or malformed URLs are dropped.
+ */
 export function saveRedirectUrl(url: string): void {
-  // Never persist a redirect to the synthetic 'default' org — it isn't real and
-  // would loop back there on every subsequent login.
+  let target: URL;
   try {
-    const pathname = new URL(url).pathname;
-    if (pathname.startsWith('/organizations/default/') || pathname === '/organizations/default') return;
+    target = new URL(url, window.location.origin);
   } catch {
-    /* ignore malformed URLs */
+    return;
   }
-  localStorage.setItem(REDIRECT_URL_KEY, url);
+  if (target.origin !== window.location.origin) return;
+  // Never persist a redirect to the synthetic 'default' org on WSO2 Cloud — it isn't real and would
+  // loop back there on every subsequent login. Locally (ORG_HANDLE=default) 'default' is the real org.
+  const isSyntheticDefault = window.API_CONFIG?.orgHandle !== 'default' && (target.pathname === '/organizations/default' || target.pathname.startsWith('/organizations/default/'));
+  if (isSyntheticDefault) return;
+  localStorage.setItem(REDIRECT_URL_KEY, `${target.pathname}${target.search}${target.hash}`);
 }
 
+/** Returns (and clears) the saved in-app path; ignores anything that isn't a same-app path. */
 export function getAndClearRedirectUrl(): string | null {
-  const url = localStorage.getItem(REDIRECT_URL_KEY);
+  const path = localStorage.getItem(REDIRECT_URL_KEY);
   localStorage.removeItem(REDIRECT_URL_KEY);
-  return url;
+  return path?.startsWith('/') && !path.startsWith('//') ? path : null;
 }
 
 export function generateAndSaveOIDCState(): string {
