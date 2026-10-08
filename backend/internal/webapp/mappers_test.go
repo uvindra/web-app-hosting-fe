@@ -121,9 +121,29 @@ func TestConfigItemsFromBinding(t *testing.T) {
 	}
 	// Removing a config drops only its own values.
 	c := overrides(b.Spec)
-	removeConfigValues(c, configMeta{Kind: KindConfig, Keys: []string{"A"}})
+	removeConfigValues(c, configMeta{ID: "env", Kind: KindConfig, Keys: []string{"A"}}, readMeta(b))
 	if len(*c.Env) != 1 || (*c.Env)[0].Key != "K" {
 		t.Fatalf("env after remove = %+v", *c.Env)
+	}
+}
+
+// TestRemoveSharedFileKeepsTheOther: two file configs that (from before
+// conflicts were rejected) mount the same file: deleting one leaves the
+// other's entry.
+func TestRemoveSharedFileKeepsTheOther(t *testing.T) {
+	a := configMeta{ID: "a", Kind: KindFile, Keys: []string{"config.js"}, MountPath: "/w"}
+	b := configMeta{ID: "b", Kind: KindFile, Keys: []string{"config.js"}, MountPath: "/w"}
+	other := configMeta{ID: "c", Kind: KindFile, Keys: []string{"config.js"}, MountPath: "/x"}
+	c := &gen.ContainerOverride{Env: &[]gen.EnvVar{}, Files: &[]gen.FileVar{
+		{Key: "config.js", MountPath: "/w", Value: ptr("a")}, {Key: "config.js", MountPath: "/w", Value: ptr("b")}, {Key: "config.js", MountPath: "/x", Value: ptr("c")},
+	}}
+	removeConfigValues(c, a, []configMeta{a, b, other})
+	if len(*c.Files) != 2 || (*c.Files)[0].MountPath != "/w" || (*c.Files)[1].MountPath != "/x" {
+		t.Fatalf("files = %+v", *c.Files)
+	}
+	removeConfigValues(c, b, []configMeta{b, other})
+	if len(*c.Files) != 1 || (*c.Files)[0].MountPath != "/x" {
+		t.Fatalf("files = %+v", *c.Files)
 	}
 }
 

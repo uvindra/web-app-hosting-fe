@@ -206,17 +206,8 @@ func (s *Service) writeConfig(ctx context.Context, webAppID, trackID, env, id st
 	for _, e := range w.Entries {
 		keys = append(keys, e.Key)
 	}
-	if w.Kind != KindFile {
-		for _, m := range metas {
-			if (prev != nil && m.ID == prev.ID) || m.Kind == KindFile {
-				continue
-			}
-			for _, k := range keys {
-				if slices.Contains(m.Keys, k) {
-					return nil, errf(CodeConflict, "key %q is already defined in %q", k, m.Name)
-				}
-			}
-		}
+	if err := keyConflict(metas, prev, w.Kind, w.MountPath, keys); err != nil {
+		return nil, err
 	}
 
 	meta := configMeta{ID: w.Name, Name: w.Name, Kind: w.Kind, Keys: keys, MountPath: w.MountPath, UpdatedAt: time.Now().UTC().Format(time.RFC3339)}
@@ -252,9 +243,13 @@ func (s *Service) writeConfig(ctx context.Context, webAppID, trackID, env, id st
 
 	updated, err := s.oc.MutateReleaseBinding(ctx, ns(ctx), b.Metadata.Name, func(rb *gen.ReleaseBinding) error {
 		ms := readMeta(*rb)
+		// Re-check against the binding as written now (a concurrent write).
+		if err := keyConflict(ms, prev, w.Kind, w.MountPath, keys); err != nil {
+			return err
+		}
 		c := overrides(rb.Spec)
 		if prev != nil {
-			removeConfigValues(c, *prev)
+			removeConfigValues(c, *prev, ms)
 			ms = slices.DeleteFunc(ms, func(m configMeta) bool { return m.ID == prev.ID })
 		}
 		addConfigValues(c, meta, w)
@@ -293,14 +288,66 @@ func secretName(component, env, name string) string {
 	return Slug(fmt.Sprintf("%s-%s-%s", component, env, name), 63)
 }
 
-func removeConfigValues(c *gen.ContainerOverride, m configMeta) {
+// keyConflict rejects a write whose env keys, or whose file (mount path +
+// file name), another config item of the environment already defines.
+func keyConflict(metas []configMeta, prev *configMeta, kind, mountPath string, keys []string) error {
+	for _, m := range metas {
+		if prev != nil && m.ID == prev.ID {
+			continue
+		}
+		if (kind == KindFile) != (m.Kind == KindFile) {
+			continue
+		}
+		for _, k := range keys {
+			if !slices.Contains(m.Keys, k) {
+				continue
+			}
+			if kind != KindFile {
+				return errf(CodeConflict, "key %q is already defined in %q", k, m.Name)
+			}
+			if m.MountPath == mountPath {
+				return errf(CodeConflict, "file %s is already mounted by %q", path.Join(mountPath, k), m.Name)
+			}
+		}
+	}
+	return nil
+}
+
+// removeConfigValues removes m's values from the overrides. Each value is
+// identified by its env key, or its mount path + file name. A value another
+// config item in all (the binding's metas) also claims — duplicates written
+// before conflicts were rejected — loses one entry only, so deleting one
+// item never deletes another's.
+func removeConfigValues(c *gen.ContainerOverride, m configMeta, all []configMeta) {
+	claimedElsewhere := func(key string) bool {
+		for _, o := range all {
+			if o.ID != m.ID && (o.Kind == KindFile) == (m.Kind == KindFile) && slices.Contains(o.Keys, key) && (m.Kind != KindFile || o.MountPath == m.MountPath) {
+				return true
+			}
+		}
+		return false
+	}
 	if m.Kind == KindFile {
-		files := slices.DeleteFunc(*c.Files, func(f gen.FileVar) bool { return f.MountPath == m.MountPath && slices.Contains(m.Keys, f.Key) })
-		c.Files = &files
+		*c.Files = removeEntries(*c.Files, m.Keys, claimedElsewhere, func(f gen.FileVar) (string, bool) { return f.Key, f.MountPath == m.MountPath })
 		return
 	}
-	env := slices.DeleteFunc(*c.Env, func(e gen.EnvVar) bool { return slices.Contains(m.Keys, e.Key) })
-	c.Env = &env
+	*c.Env = removeEntries(*c.Env, m.Keys, claimedElsewhere, func(e gen.EnvVar) (string, bool) { return e.Key, true })
+}
+
+// removeEntries drops the entries whose key is in keys: all of them, or only
+// the first when shared(key).
+func removeEntries[T any](list []T, keys []string, shared func(string) bool, keyOf func(T) (string, bool)) []T {
+	removedOne := map[string]bool{}
+	out := list[:0:0]
+	for _, it := range list {
+		k, ok := keyOf(it)
+		if ok && slices.Contains(keys, k) && !(shared(k) && removedOne[k]) {
+			removedOne[k] = true
+			continue
+		}
+		out = append(out, it)
+	}
+	return out
 }
 
 func addConfigValues(c *gen.ContainerOverride, m configMeta, w ConfigWrite) {
@@ -347,7 +394,7 @@ func (s *Service) DeleteConfig(ctx context.Context, webAppID, trackID, env, id s
 		return errf(CodeNotFound, "config %q not found", id)
 	}
 	if _, err := s.oc.MutateReleaseBinding(ctx, ns(ctx), b.Metadata.Name, func(rb *gen.ReleaseBinding) error {
-		removeConfigValues(overrides(rb.Spec), *target)
+		removeConfigValues(overrides(rb.Spec), *target, readMeta(*rb))
 		writeMeta(rb, slices.DeleteFunc(readMeta(*rb), func(m configMeta) bool { return m.ID == id }))
 		return nil
 	}); err != nil {
