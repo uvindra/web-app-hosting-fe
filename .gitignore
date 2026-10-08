@@ -10,9 +10,10 @@ test-results/
 .auth/
 !.auth/.gitkeep
 
-# Production
+# Production (anchored: a bare `build/` also ignored src/components/build/)
 dist/
-build/
+/build/
+/frontend/build/
 
 # Misc
 .DS_Store
