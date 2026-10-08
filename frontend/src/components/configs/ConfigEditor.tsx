@@ -1,12 +1,23 @@
-import { useState, type JSX } from 'react';
-import { Alert, Box, Button, CircularProgress, FormControlLabel, IconButton, Radio, RadioGroup, Stack, TextField, Typography } from '@wso2/oxygen-ui';
+import { memo, useCallback, useState, type ChangeEvent, type JSX } from 'react';
+import { Alert, Box, Button, CircularProgress, FormControlLabel, IconButton, Radio, RadioGroup, Stack, Typography } from '@wso2/oxygen-ui';
 import { ArrowLeft, Plus, Trash2, Upload } from '@wso2/oxygen-ui-icons-react';
+import MemoTextField from '../MemoTextField';
 import { useSaveConfig } from '../../hooks/useConfigs';
 import { emptyForm, formToWrite, itemToForm, parseDotEnv, validateFileName, validateForm, validateKey, validateName } from './configForm';
 import { SPA_WEB_ROOT } from '../../constants/buildPresets';
-import type { ConfigItem, ConfigKind } from '../../types/configs';
+import type { ConfigEntry, ConfigItem, ConfigKind } from '../../types/configs';
 import type { EnvironmentId } from '../../types/webApp';
 import type { TrackRef } from '../../types/track';
+
+type InputChange = ChangeEvent<HTMLInputElement | HTMLTextAreaElement>;
+type EntryPatch = Partial<Pick<ConfigEntry, 'key' | 'value'>>;
+
+// Hoisted so the memoised fields below see the same props on every render (see MemoTextField).
+const fieldWidthSx = { maxWidth: 520 };
+const envTextSx = { mb: 1 };
+const keySx = { flex: 1 };
+const valueSx = { flex: 2 };
+const monospaceSlotProps = { input: { sx: { fontFamily: 'monospace' } } };
 
 interface ConfigEditorProps {
   track: TrackRef;
@@ -31,7 +42,14 @@ export default function ConfigEditor({ track, environment, existing, isSpa = fal
   const fileEntry = form.entries[0];
   const errors = validateForm(form, isEdit);
 
-  const setEntry = (i: number, patch: Partial<{ key: string; value: string }>): void => setForm((p) => ({ ...p, entries: p.entries.map((e, idx) => (idx === i ? { ...e, ...patch, masked: 'value' in patch ? undefined : e.masked } : e)) }));
+  // Stable callbacks (functional updates only), so typing in one field doesn't re-render the others.
+  const setEntry = useCallback((i: number, patch: EntryPatch): void => setForm((p) => ({ ...p, entries: p.entries.map((e, idx) => (idx === i ? { ...e, ...patch, masked: 'value' in patch ? undefined : e.masked } : e)) })), []);
+  const removeEntry = useCallback((i: number): void => setForm((p) => ({ ...p, entries: p.entries.filter((_, idx) => idx !== i) })), []);
+  const onNameChange = useCallback((e: InputChange): void => setForm((p) => ({ ...p, name: e.target.value })), []);
+  const onMountPathChange = useCallback((e: InputChange): void => setForm((p) => ({ ...p, mountPath: e.target.value })), []);
+  const onFileNameChange = useCallback((e: InputChange): void => setEntry(0, { key: e.target.value }), [setEntry]);
+  const onFileContentChange = useCallback((e: InputChange): void => setEntry(0, { value: e.target.value }), [setEntry]);
+  const onEnvTextChange = useCallback((e: InputChange): void => setEnvText(e.target.value), []);
 
   const importEnv = (): void => {
     const parsed = parseDotEnv(envText);
@@ -60,16 +78,7 @@ export default function ConfigEditor({ track, environment, existing, isSpa = fal
       </Typography>
 
       <Stack gap={3} sx={{ mb: 3, maxWidth: 520 }}>
-        <TextField
-          label="Name"
-          value={form.name}
-          onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-          disabled={isEdit}
-          required
-          error={showErrors && !isEdit && !!validateName(form.name)}
-          helperText={showErrors && !isEdit ? validateName(form.name) : undefined}
-          fullWidth
-        />
+        <MemoTextField label="Name" value={form.name} onChange={onNameChange} disabled={isEdit} required error={showErrors && !isEdit && !!validateName(form.name)} helperText={showErrors && !isEdit ? validateName(form.name) : undefined} fullWidth />
         <Box>
           <Typography variant="subtitle2">Type</Typography>
           <RadioGroup row value={form.kind} onChange={(e) => setForm((p) => ({ ...p, kind: e.target.value as ConfigKind, entries: e.target.value !== 'file' ? p.entries : p.entries.length > 0 ? p.entries.slice(0, 1) : [{ key: '', value: '' }] }))}>
@@ -83,33 +92,24 @@ export default function ConfigEditor({ track, environment, existing, isSpa = fal
       {isFile ? (
         fileEntry && (
           <Stack gap={2} sx={{ mb: 2 }}>
-            <TextField
+            <MemoTextField
               label="Mount directory"
               value={form.mountPath}
-              onChange={(e) => setForm((p) => ({ ...p, mountPath: e.target.value }))}
+              onChange={onMountPathChange}
               helperText={isSpa ? `${SPA_WEB_ROOT} serves the file at /<file name> (e.g. /config.js).` : 'Absolute directory inside the container.'}
               fullWidth
-              sx={{ maxWidth: 520 }}
+              sx={fieldWidthSx}
             />
-            <TextField
+            <MemoTextField
               label="File name"
               value={fileEntry.key}
-              onChange={(e) => setEntry(0, { key: e.target.value })}
+              onChange={onFileNameChange}
               error={showErrors && !!validateFileName(fileEntry.key)}
               helperText={showErrors ? validateFileName(fileEntry.key) || undefined : undefined}
               placeholder="config.js"
-              sx={{ maxWidth: 520 }}
+              sx={fieldWidthSx}
             />
-            <TextField
-              label="Content"
-              value={fileEntry.value}
-              onChange={(e) => setEntry(0, { value: e.target.value })}
-              multiline
-              minRows={8}
-              placeholder="window.configs = { apiUrl: 'https://api.example.com' };"
-              fullWidth
-              slotProps={{ input: { sx: { fontFamily: 'monospace' } } }}
-            />
+            <MemoTextField label="Content" value={fileEntry.value} onChange={onFileContentChange} multiline minRows={8} placeholder="window.configs = { apiUrl: 'https://api.example.com' };" fullWidth slotProps={monospaceSlotProps} />
           </Stack>
         )
       ) : (
@@ -122,7 +122,7 @@ export default function ConfigEditor({ track, environment, existing, isSpa = fal
           </Stack>
           {importing && (
             <Box sx={{ mb: 2 }}>
-              <TextField label=".env contents" placeholder="API_BASE_URL=https://api.example.com" multiline minRows={4} value={envText} onChange={(e) => setEnvText(e.target.value)} fullWidth sx={{ mb: 1 }} />
+              <MemoTextField label=".env contents" placeholder="API_BASE_URL=https://api.example.com" multiline minRows={4} value={envText} onChange={onEnvTextChange} fullWidth sx={envTextSx} />
               <Button size="small" variant="outlined" onClick={importEnv} disabled={envText.trim() === ''}>
                 Add entries
               </Button>
@@ -130,27 +130,9 @@ export default function ConfigEditor({ track, environment, existing, isSpa = fal
           )}
 
           <Stack gap={1.5} sx={{ mb: 2 }}>
-            {form.entries.map((entry, i) => {
-              const keyError = showErrors ? validateKey(entry.key) : '';
-              return (
-                <Stack key={i} direction="row" gap={1.5} alignItems="flex-start">
-                  <TextField size="small" label="Key" value={entry.key} onChange={(e) => setEntry(i, { key: e.target.value })} error={!!keyError} helperText={keyError || undefined} sx={{ flex: 1 }} />
-                  <TextField
-                    size="small"
-                    label="Value"
-                    type={isSecret ? 'password' : 'text'}
-                    value={entry.value}
-                    placeholder={entry.masked ? '•••••••• (unchanged)' : undefined}
-                    autoComplete="off"
-                    onChange={(e) => setEntry(i, { value: e.target.value })}
-                    sx={{ flex: 2 }}
-                  />
-                  <IconButton aria-label={`Remove ${entry.key || 'entry'}`} color="error" onClick={() => setForm((p) => ({ ...p, entries: p.entries.filter((_, idx) => idx !== i) }))}>
-                    <Trash2 size={16} />
-                  </IconButton>
-                </Stack>
-              );
-            })}
+            {form.entries.map((entry, i) => (
+              <EntryRow key={i} index={i} entry={entry} isSecret={isSecret} showErrors={showErrors} onChange={setEntry} onRemove={removeEntry} />
+            ))}
           </Stack>
           <Button size="small" startIcon={<Plus size={14} />} onClick={() => setForm((p) => ({ ...p, entries: [...p.entries, { key: '', value: '' }] }))}>
             Add key
@@ -180,3 +162,28 @@ export default function ConfigEditor({ track, environment, existing, isSpa = fal
     </Box>
   );
 }
+
+interface EntryRowProps {
+  index: number;
+  entry: ConfigEntry;
+  isSecret: boolean;
+  showErrors: boolean;
+  onChange: (index: number, patch: EntryPatch) => void;
+  onRemove: (index: number) => void;
+}
+
+/** One key/value row; memoised so typing in a row doesn't re-render the other rows' fields. */
+const EntryRow = memo(function EntryRow({ index, entry, isSecret, showErrors, onChange, onRemove }: EntryRowProps): JSX.Element {
+  const keyError = showErrors ? validateKey(entry.key) : '';
+  const onKeyChange = useCallback((e: InputChange) => onChange(index, { key: e.target.value }), [index, onChange]);
+  const onValueChange = useCallback((e: InputChange) => onChange(index, { value: e.target.value }), [index, onChange]);
+  return (
+    <Stack direction="row" gap={1.5} alignItems="flex-start">
+      <MemoTextField size="small" label="Key" value={entry.key} onChange={onKeyChange} error={!!keyError} helperText={keyError || undefined} sx={keySx} />
+      <MemoTextField size="small" label="Value" type={isSecret ? 'password' : 'text'} value={entry.value} placeholder={entry.masked ? '•••••••• (unchanged)' : undefined} autoComplete="off" onChange={onValueChange} sx={valueSx} />
+      <IconButton aria-label={`Remove ${entry.key || 'entry'}`} color="error" onClick={() => onRemove(index)}>
+        <Trash2 size={16} />
+      </IconButton>
+    </Stack>
+  );
+});

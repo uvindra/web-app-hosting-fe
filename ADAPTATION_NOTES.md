@@ -143,6 +143,24 @@ one card per pipeline environment) — no registry, no plugin indirection.
 
 ## Changelog
 
+### 2026-10-08 — Fixes from the P1 browser walkthrough
+
+- **Config editor dropped keystrokes / "Maximum update depth exceeded".** Typing fast into the Configs & Secrets
+  editor (seen with the File `config.js` content; the name, key and value inputs too) lost a character roughly every
+  50 keystrokes, with React's update-depth error thrown from `setEntry`. Cause: in development MUI's `FormControl`
+  rebuilds its context on every render (its dev-only `registerEffect` isn't memoised), so every TextField that
+  re-renders re-runs `InputBase`'s `setAdornedStart` effect, leaving a pending update. Each keystroke re-rendered
+  *every* field of the form, and when input outpaces React's non-urgent work (Chrome runs queued input first:
+  automated typing, fast typists) those updates chain across keystrokes until React's nested-update counter passes
+  50 and throws from the next `setState`, discarding that keystroke. Not our state logic, and production builds
+  aren't affected, but dev (and every browser walkthrough) is. Fix: `ConfigEditor` uses the new
+  `components/MemoTextField` (`memo(TextField)`) with stable `useCallback` handlers (functional `setForm` only) and
+  hoisted `sx`/`slotProps`, and each key/value row is a memoised `EntryRow` — typing now re-renders only the field
+  being edited. Covered by `ConfigEditor.test.tsx` (fails on the old code), which types >100 characters with `/`
+  without yielding. `vitest.config.ts` now inlines `@wso2/oxygen-ui` (and `@mui/x-*`) so component tests can render
+  oxygen-ui (its ESM build imports `prismjs/components/*` without extensions, which Node rejects). Other forms with
+  several controlled TextFields have the same dev-only exposure; use `MemoTextField` there if it bites.
+
 ### 2026-10-08 — P1: health checks, HPA, container images, metrics, plan gating
 
 - **Health Checks page** is live (per track + environment, behind `DeployedGate`): liveness/readiness probes
