@@ -208,11 +208,37 @@ func (s *Service) deployRun(ctx context.Context, t track, env, runName string) (
 	if err := s.checkEnv(ctx, t, env); err != nil {
 		return nil, err
 	}
+	unlock, err := s.lockTrack(ctx, t.Name)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	rel, run, err := s.ensureRelease(ctx, t, runName)
 	if err != nil {
 		return nil, err
 	}
 	return s.bindRelease(ctx, t, env, rel, run)
+}
+
+// lockTrack serializes deploys of one track. A release is cut by writing the
+// build's workload onto the track's single shared Workload and then
+// snapshotting it (OpenChoreo has no "release from this workload" call short
+// of re-supplying the frozen ComponentType), so two concurrent deploys of the
+// same track could otherwise snapshot each other's image.
+//
+// The lock is process-local: with several BFF replicas two deploys of one
+// track can still interleave. ensureRelease's image check is the backstop —
+// a mismatched snapshot is deleted and re-cut, or the deploy fails loudly;
+// a wrong image is never bound.
+func (s *Service) lockTrack(ctx context.Context, component string) (func(), error) {
+	v, _ := s.trackLocks.LoadOrStore(ns(ctx)+"/"+component, make(chan struct{}, 1))
+	sem := v.(chan struct{})
+	select {
+	case sem <- struct{}{}:
+		return func() { <-sem }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 func (s *Service) bindRelease(ctx context.Context, t track, env, release string, run gen.WorkflowRun) (*Deployment, error) {
@@ -245,9 +271,15 @@ func (s *Service) checkEnv(ctx context.Context, t track, env string) error {
 	return errf(CodeBadRequest, "environment %q is not in the project's deployment pipeline", env)
 }
 
+// releaseCutAttempts bounds how often ensureRelease re-cuts a release whose
+// snapshot did not hold the build's image.
+const releaseCutAttempts = 3
+
 // ensureRelease cuts (once) the ComponentRelease named after a successful
 // build, from the workload that build produced (the run's
 // `openchoreo.dev/workload` annotation), with the HTTP endpoint ensured.
+// Callers hold lockTrack. The release's frozen image is checked against the
+// build's image both for an existing release and after cutting a new one.
 func (s *Service) ensureRelease(ctx context.Context, t track, runName string) (string, gen.WorkflowRun, error) {
 	n := ns(ctx)
 	run, err := s.oc.GetWorkflowRun(ctx, n, runName)
@@ -260,28 +292,73 @@ func (s *Service) ensureRelease(ctx context.Context, t track, runName string) (s
 	if label(run.Metadata, LabelOCComponent) != t.Name {
 		return "", gen.WorkflowRun{}, errf(CodeNotFound, "build %q not found", runName)
 	}
-	if _, err := s.oc.GetComponentRelease(ctx, n, runName); err == nil {
-		return runName, *run, nil
+	built := builtWorkload(*run)
+	if rel, err := s.oc.GetComponentRelease(ctx, n, runName); err == nil {
+		got, want := releaseImage(rel), workloadImage(built)
+		if want == "" || got == want {
+			return runName, *run, nil
+		}
+		if err := s.dropMismatchedRelease(ctx, t, runName, got, want); err != nil {
+			return "", gen.WorkflowRun{}, err
+		}
+	} else if !notFound(err) {
+		return "", gen.WorkflowRun{}, err
 	}
 	if RunStatus(*run) != BuildSuccess {
 		return "", gen.WorkflowRun{}, errf(CodeConflict, "build %q has not succeeded", runName)
 	}
-	current, err := s.oc.GetComponentWorkload(ctx, n, t.Name)
-	if err != nil {
-		return "", gen.WorkflowRun{}, err
-	}
-	desired := current
-	if raw := annotation(run.Metadata, AnnOCWorkload); raw != "" {
-		var w gen.Workload
-		if err := json.Unmarshal([]byte(raw), &w); err == nil && w.Spec != nil {
-			desired = &w
+	for attempt := 1; ; attempt++ {
+		want, err := s.writeBuildWorkload(ctx, t, runName, built)
+		if err != nil {
+			return "", gen.WorkflowRun{}, err
+		}
+		if err := s.oc.GenerateRelease(ctx, n, t.Name, runName); err != nil {
+			return "", gen.WorkflowRun{}, fmt.Errorf("cut release: %w", err)
+		}
+		rel, err := s.oc.GetComponentRelease(ctx, n, runName)
+		if err != nil {
+			return "", gen.WorkflowRun{}, fmt.Errorf("read back release %q: %w", runName, err)
+		}
+		got := releaseImage(rel)
+		if got == want {
+			return runName, *run, nil
+		}
+		// Another writer (e.g. a second BFF replica) changed the track's
+		// workload between our write and the snapshot.
+		slog.WarnContext(ctx, "release snapshot holds the wrong image; re-cutting", "release", runName, "want", want, "got", got, "attempt", attempt)
+		if err := s.oc.DeleteComponentRelease(ctx, n, runName); err != nil {
+			return "", gen.WorkflowRun{}, fmt.Errorf("delete mismatched release %q: %w", runName, err)
+		}
+		if attempt == releaseCutAttempts {
+			return "", gen.WorkflowRun{}, errf(CodeConflict, "could not cut release %q with the build's image %s (the track's workload kept changing; another deploy may be running) — try again", runName, want)
+		}
+		select {
+		case <-time.After(time.Duration(attempt) * s.opts.ReleaseVerifyWait):
+		case <-ctx.Done():
+			return "", gen.WorkflowRun{}, ctx.Err()
 		}
 	}
+}
+
+// writeBuildWorkload writes the build's workload (or, for a run without one,
+// keeps the current workload) onto the track's Workload, with the HTTP
+// endpoint ensured, and returns the image it holds.
+func (s *Service) writeBuildWorkload(ctx context.Context, t track, runName string, built *gen.Workload) (string, error) {
+	n := ns(ctx)
+	current, err := s.oc.GetComponentWorkload(ctx, n, t.Name)
+	if err != nil {
+		return "", err
+	}
+	desired := current
+	if built != nil {
+		desired = cloneWorkload(built)
+	}
 	if desired == nil || desired.Spec == nil || desired.Spec.Container == nil {
-		return "", gen.WorkflowRun{}, errf(CodeConflict, "build %q produced no workload", runName)
+		return "", errf(CodeConflict, "build %q produced no workload", runName)
 	}
 	changed := ensureWorkloadEndpoint(desired.Spec, t)
-	if current == nil {
+	switch {
+	case current == nil:
 		desired.Metadata = gen.ObjectMeta{Name: t.Name + "-workload"}
 		if desired.Spec.Owner == nil {
 			desired.Spec.Owner = &struct {
@@ -290,18 +367,78 @@ func (s *Service) ensureRelease(ctx context.Context, t track, runName string) (s
 			}{ComponentName: t.Name, ProjectName: t.Project}
 		}
 		if _, err := s.oc.CreateWorkload(ctx, n, *desired); err != nil {
-			return "", gen.WorkflowRun{}, fmt.Errorf("create workload: %w", err)
+			return "", fmt.Errorf("create workload: %w", err)
 		}
-	} else if changed || desired != current {
+	case changed || desired != current:
 		desired.Metadata = current.Metadata
+		if desired.Spec.Owner == nil {
+			desired.Spec.Owner = current.Spec.Owner
+		}
 		if err := s.oc.UpdateWorkload(ctx, n, *desired); err != nil {
-			return "", gen.WorkflowRun{}, fmt.Errorf("update workload: %w", err)
+			return "", fmt.Errorf("update workload: %w", err)
 		}
 	}
-	if err := s.oc.GenerateRelease(ctx, n, t.Name, runName); err != nil {
-		return "", gen.WorkflowRun{}, fmt.Errorf("cut release: %w", err)
+	return desired.Spec.Container.Image, nil
+}
+
+// dropMismatchedRelease handles an existing release named after a build
+// whose frozen image is not the build's (cut during a concurrent deploy
+// before deploys were serialized, or by another replica). An unbound one is
+// deleted so it can be re-cut; a bound one is reported, never silently reused.
+func (s *Service) dropMismatchedRelease(ctx context.Context, t track, release, got, want string) error {
+	n := ns(ctx)
+	bindings, err := s.oc.ListReleaseBindings(ctx, n, t.Name)
+	if err != nil {
+		return err
 	}
-	return runName, *run, nil
+	for _, b := range bindings {
+		if releaseOf(b) == release {
+			return errf(CodeConflict, "release %q is deployed in %s with image %s, not this build's image %s; trigger a new build and deploy it", release, b.Spec.Environment, got, want)
+		}
+	}
+	slog.WarnContext(ctx, "existing release holds the wrong image; re-cutting", "release", release, "want", want, "got", got)
+	if err := s.oc.DeleteComponentRelease(ctx, n, release); err != nil {
+		return fmt.Errorf("delete mismatched release %q: %w", release, err)
+	}
+	return nil
+}
+
+// builtWorkload returns the workload a run's generate-workload step produced
+// (the `openchoreo.dev/workload` annotation), or nil when it has none.
+func builtWorkload(run gen.WorkflowRun) *gen.Workload {
+	raw := annotation(run.Metadata, AnnOCWorkload)
+	if raw == "" {
+		return nil
+	}
+	var w gen.Workload
+	if err := json.Unmarshal([]byte(raw), &w); err != nil || w.Spec == nil {
+		return nil
+	}
+	return &w
+}
+
+func workloadImage(w *gen.Workload) string {
+	if w == nil || w.Spec == nil || w.Spec.Container == nil {
+		return ""
+	}
+	return w.Spec.Container.Image
+}
+
+func cloneWorkload(w *gen.Workload) *gen.Workload {
+	raw, _ := json.Marshal(w)
+	var out gen.Workload
+	_ = json.Unmarshal(raw, &out)
+	return &out
+}
+
+// releaseImage returns the container image frozen into a release.
+func releaseImage(r *gen.ComponentRelease) string {
+	if r == nil || r.Spec == nil {
+		return ""
+	}
+	c, _ := r.Spec.Workload["container"].(map[string]any)
+	img, _ := c["image"].(string)
+	return img
 }
 
 // ensureWorkloadEndpoint adds the external HTTP endpoint (and PORT env for

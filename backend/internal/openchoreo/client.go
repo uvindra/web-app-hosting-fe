@@ -392,6 +392,18 @@ func (c *Client) GetComponentRelease(ctx context.Context, ns, name string) (*gen
 	return r.JSON200, nil
 }
 
+// DeleteComponentRelease deletes a ComponentRelease (a missing one is not an error).
+func (c *Client) DeleteComponentRelease(ctx context.Context, ns, name string) error {
+	r, err := c.oc.DeleteComponentReleaseWithResponse(ctx, ns, name)
+	if err != nil {
+		return err
+	}
+	if !ok(r.StatusCode()) && r.StatusCode() != http.StatusNotFound {
+		return respError(r.StatusCode(), r.Body)
+	}
+	return nil
+}
+
 // ListReleaseBindings lists a component's bindings ("" = every binding in the namespace).
 func (c *Client) ListReleaseBindings(ctx context.Context, ns, component string) ([]gen.ReleaseBinding, error) {
 	var out []gen.ReleaseBinding

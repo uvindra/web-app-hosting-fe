@@ -32,6 +32,9 @@ type Options struct {
 	// EnvCacheTTL is how long a project's pipeline environments are reused
 	// (0 = 30s, <0 = off). They change rarely and every page reads them.
 	EnvCacheTTL time.Duration
+	// ReleaseVerifyWait is the base backoff between attempts to cut a
+	// release whose snapshot did not hold the build's image (0 = 500ms).
+	ReleaseVerifyWait time.Duration
 }
 
 // Service implements the Web App Hosting operations.
@@ -43,6 +46,9 @@ type Service struct {
 	ensured sync.Map // namespace -> platformres.Version ensured
 	watches sync.Map // run name -> struct{}
 	envs    *ttlCache[[]Environment]
+	// trackLocks serializes deploys per track (namespace/component -> chan
+	// struct{} of capacity 1); see lockTrack.
+	trackLocks sync.Map
 	// async tracks background follow-up work (first builds) so tests can wait.
 	async sync.WaitGroup
 }
@@ -57,6 +63,9 @@ func New(oc *openchoreo.Client, p *platform.Platform, opts Options) *Service {
 	}
 	if opts.DefaultProject == "" {
 		opts.DefaultProject = "default"
+	}
+	if opts.ReleaseVerifyWait == 0 {
+		opts.ReleaseVerifyWait = 500 * time.Millisecond
 	}
 	if opts.EnvCacheTTL == 0 {
 		opts.EnvCacheTTL = 30 * time.Second
