@@ -103,17 +103,17 @@ func TestPublicGitHubRateLimit(t *testing.T) {
 
 // TestCloudGitPathsAndUserOnly: git-app-service is reached at
 // {PAS internal base}/git/github/... (the gateway prepends /wso2cloud-dp) with
-// the user's JWT, and service-identity calls are refused before any request.
+// the user's JWT and the PAS Host header, and service-identity calls are refused before any request.
 func TestCloudGitPathsAndUserOnly(t *testing.T) {
-	var gotPath, gotAuth, gotImpersonate string
+	var gotPath, gotAuth, gotImpersonate, gotHost string
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		gotPath, gotAuth, gotImpersonate = r.URL.Path, r.Header.Get("Authorization"), r.Header.Get("X-Impersonate-Org")
+		gotPath, gotAuth, gotImpersonate, gotHost = r.URL.Path, r.Header.Get("Authorization"), r.Header.Get("X-Impersonate-Org"), r.Host
 		w.WriteHeader(http.StatusCreated)
 	}))
 	defer srv.Close()
-	g := NewCloudGit(srv.URL+"/dev-wso2cloud-platform-api-service-platform-internal-endpoint", &PublicGitHub{APIURL: "http://127.0.0.1:1"}, svcTokens{})
+	g := NewCloudGit(srv.URL+"/dev-wso2cloud-platform-api-service-platform-internal-endpoint", "dev-wso2cloud.gateway.example.com", &PublicGitHub{APIURL: "http://127.0.0.1:1"}, svcTokens{})
 	repo := RepoRef{URL: "https://github.com/acme/site", Branch: "main", InstallationID: 7}
 	user := auth.WithOrg(auth.WithUserToken(context.Background(), "user-jwt"), &auth.Org{UUID: "org-uuid"})
 
@@ -122,6 +122,9 @@ func TestCloudGitPathsAndUserOnly(t *testing.T) {
 	}
 	if want := "/dev-wso2cloud-platform-api-service-platform-internal-endpoint/git/github/sources/default/site/build-secret"; gotPath != want {
 		t.Fatalf("path = %q, want %q", gotPath, want)
+	}
+	if gotHost != "dev-wso2cloud.gateway.example.com" {
+		t.Fatalf("host = %q", gotHost)
 	}
 	if gotAuth != "Bearer user-jwt" || gotImpersonate != "" {
 		t.Fatalf("auth = %q impersonate = %q", gotAuth, gotImpersonate)

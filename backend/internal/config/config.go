@@ -68,7 +68,12 @@ type Config struct {
 	// (the ipaas-service / app-factory-api convention). The gateway forwards it
 	// to PAS `/wso2cloud-dp`, so OC calls are `{PASURL}/api/v1/...` and git calls
 	// `{PASURL}/git/github/...`.
-	PASURL           string
+	PASURL string
+	// PASHost is the Host header sent on PAS calls (PAS_HOST_HEADER). The
+	// internal gateway routes by virtual host, so on WSO2 Cloud this is
+	// `${environment}-wso2cloud.gateway.${cloud_base_domain}` (as ipaas-service's
+	// PLATFORM_API_SERVICE_HOST). Empty sends the URL's host.
+	PASHost          string
 	SecretManagerURL string
 	ObsProxyURL      string // cloud-obs-proxy base, e.g. https://.../wso2cloud-obs
 	// BillingURL is the billing user API base (TargetWSO2Cloud), e.g.
@@ -116,6 +121,7 @@ func Load(targetOverride string) (*Config, error) {
 		OCNamespace:           env("OC_NAMESPACE", "default"),
 		LocalOrgHandle:        env("LOCAL_ORG_HANDLE", "default"),
 		PASURL:                strings.TrimRight(env("PAS_URL", ""), "/"),
+		PASHost:               env("PAS_HOST_HEADER", ""),
 		SecretManagerURL:      strings.TrimRight(env("SECRET_MANAGER_URL", ""), "/"),
 		ObsProxyURL:           strings.TrimRight(env("OBS_PROXY_URL", ""), "/"),
 		ObserverURL:           strings.TrimRight(env("OBSERVER_URL", ""), "/"),

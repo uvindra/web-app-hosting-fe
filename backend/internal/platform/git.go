@@ -313,11 +313,15 @@ type CloudGit struct {
 }
 
 // NewCloudGit builds a CloudGit.
-func NewCloudGit(pasURL string, public *PublicGitHub, tokens interface {
+// pasHost, when set, is sent as the Host header (the internal gateway routes
+// by virtual host).
+func NewCloudGit(pasURL, pasHost string, public *PublicGitHub, tokens interface {
 	Token() (string, error)
 	Invalidate()
 }) *CloudGit {
-	return &CloudGit{PASURL: pasURL, Public: public, call: newCaller(tokens, true, false)}
+	call := newCaller(tokens, true, false)
+	call.host = pasHost
+	return &CloudGit{PASURL: pasURL, Public: public, call: call}
 }
 
 func (g *CloudGit) url(p string) string { return g.PASURL + "/git/github" + p }

@@ -61,6 +61,9 @@ type Config struct {
 	// ImpersonateOrg returns the org UUID sent as X-Impersonate-Org on M2M
 	// requests (WSO2 Cloud). nil (plain OpenChoreo) sends no header.
 	ImpersonateOrg func(ctx context.Context) string
+	// Host overrides the Host header (WSO2 Cloud: the PAS internal gateway
+	// routes by virtual host). Empty sends the BaseURL host.
+	Host string
 	// ResourceLabels are stamped on every object the client writes (D10).
 	ResourceLabels map[string]string
 	// HTTPClient overrides the inner HTTP client (tests).
@@ -119,6 +122,9 @@ func authRequestEditor(cfg Config) func(ctx context.Context, req *http.Request) 
 	}
 	return func(ctx context.Context, req *http.Request) error {
 		req.Header.Set("X-Use-OpenAPI", "true")
+		if cfg.Host != "" {
+			req.Host = cfg.Host
+		}
 		switch strategy(ctx) {
 		case AuthModeUserJWT:
 			tok := auth.UserToken(ctx)

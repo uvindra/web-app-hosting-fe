@@ -165,6 +165,10 @@ No console changes; local (`TARGET=openchoreo`) behaviour is unchanged.
   (`ErrGitUserTokenRequired`). No other background path calls git-app-service (OC `autoBuild` is off), so there is
   no background rebuild that would need a user token; webhook-driven rebuilds of App repos would need the platform
   to add impersonation on the git route.
+- **PAS Host header.** The platform team confirmed the internal gateway routes by virtual host. A new optional
+  `PAS_HOST_HEADER` (set to `${environment}-wso2cloud.gateway.${cloud_base_domain}`, as ipaas-service's
+  `PLATFORM_API_SERVICE_HOST`) is sent as `Host` on every PAS call: OC API (`openchoreo.Config.Host`) and
+  git-app-service (`CloudGit`). Empty keeps the URL host.
 - **Observability on fresh orgs (9712827).** cloud-obs-proxy's `500 OBS-V1-L-04` (no indexed data for the scope)
   is read as no logs / no metrics instead of an error.
 

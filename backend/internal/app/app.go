@@ -37,6 +37,7 @@ func Build(cfg *config.Config) (*api.Server, error) {
 		ocCfg.Strategy = openchoreo.ServiceOnlyStrategy
 	}
 	if cloud {
+		ocCfg.Host = cfg.PASHost
 		ocCfg.ImpersonateOrg = func(ctx context.Context) string {
 			if o := auth.OrgFrom(ctx); o != nil {
 				return o.UUID
@@ -53,7 +54,7 @@ func Build(cfg *config.Config) (*api.Server, error) {
 	p := &platform.Platform{Target: string(cfg.Target)}
 	if cloud {
 		p.Org = &platform.CloudOrgResolver{OC: oc}
-		p.Git = platform.NewCloudGit(cfg.PASURL, public, tokens)
+		p.Git = platform.NewCloudGit(cfg.PASURL, cfg.PASHost, public, tokens)
 		p.Secrets = platform.NewSecretManagerStore(cfg.SecretManagerURL, tokens)
 		p.Observability = platform.NewObserverLogs(cfg.ObsProxyURL, tokens, true, false)
 		p.BillingEnabled = true

@@ -23,6 +23,8 @@ type caller struct {
 	impersonate bool
 	// forceService always uses the BFF identity (AUTH_MODE=dev).
 	forceService bool
+	// host overrides the Host header when set.
+	host string
 }
 
 func newCaller(tokens openchoreo.TokenSource, impersonate, forceService bool) *caller {
@@ -68,6 +70,9 @@ func (c *caller) do(ctx context.Context, method, url string, body, out any) erro
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Accept", "application/json")
+	if c.host != "" {
+		req.Host = c.host
+	}
 	if err := c.authorize(ctx, req); err != nil {
 		return err
 	}
