@@ -1,9 +1,9 @@
 import type { JSX } from 'react';
-import { Accordion, AccordionDetails, AccordionSummary, Box, Chip, Divider, Drawer, IconButton, Stack, Typography } from '@wso2/oxygen-ui';
+import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Chip, Divider, Drawer, IconButton, Stack, Typography } from '@wso2/oxygen-ui';
 import { ChevronDown, X } from '@wso2/oxygen-ui-icons-react';
 import BuildStatusLabel from './BuildStatusLabel';
 import type { BuildRun, BuildStepStatus } from '../../types/build';
-import { formatBuildDuration } from '../../utils/buildFormat';
+import { SECURITY_SCAN_STEP, failedSecurityScan, formatBuildDuration, getBuildStepTitle, parseScanFindings } from '../../utils/buildFormat';
 import { formatRelativeTime } from '../../utils/formatRelativeTime';
 import type { PaletteColor } from '../../utils/statusColor';
 
@@ -13,6 +13,36 @@ const STEP_LABEL: Record<BuildStepStatus, string> = { success: 'Success', failed
 interface BuildDetailsDrawerProps {
   build: BuildRun | undefined;
   onClose: () => void;
+}
+
+/** Failed security scan: the critical vulnerabilities found (from the scan logs) and how to resolve them. */
+function SecurityScanAlert({ build }: { build: BuildRun }): JSX.Element {
+  const findings = parseScanFindings(build.steps.find((s) => s.name === SECURITY_SCAN_STEP)?.logs ?? []);
+  return (
+    <Alert severity="error" sx={{ mb: 2 }}>
+      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+        {findings.length > 0
+          ? `Security scan failed: ${findings.length} critical ${findings.length === 1 ? 'vulnerability' : 'vulnerabilities'} found. The image was not published.`
+          : 'Security scan failed. The image was not published; see the Security scan logs below.'}
+      </Typography>
+      {findings.length > 0 && (
+        <Box component="ul" sx={{ m: 0, mt: 0.5, pl: 2.5 }}>
+          {findings.map((v) => (
+            <li key={`${v.library}/${v.id}`}>
+              <Typography variant="body2">
+                <strong>{v.id}</strong> in {v.library} {v.installed}
+                {v.fixed ? ` (fixed in ${v.fixed})` : ' (no fix yet)'}
+                {v.title && ` — ${v.title}`}
+              </Typography>
+            </li>
+          ))}
+        </Box>
+      )}
+      <Typography variant="body2" sx={{ mt: 0.5 }}>
+        Upgrade the affected base image or packages, or accept a finding by adding its ID (one per line) to a <code>.trivyignore</code> file in the component directory.
+      </Typography>
+    </Alert>
+  );
 }
 
 /** Right drawer with build metadata and per-step logs. */
@@ -44,6 +74,7 @@ export default function BuildDetailsDrawer({ build, onClose }: BuildDetailsDrawe
             </Typography>
           </Stack>
           <Divider sx={{ mb: 2 }} />
+          {failedSecurityScan(build) && <SecurityScanAlert build={build} />}
           <Typography variant="subtitle1" sx={{ mb: 1 }}>
             Steps
           </Typography>
@@ -51,7 +82,7 @@ export default function BuildDetailsDrawer({ build, onClose }: BuildDetailsDrawe
             <Accordion key={step.name} disableGutters defaultExpanded={step.status === 'failed' || step.status === 'in-progress'}>
               <AccordionSummary expandIcon={<ChevronDown size={18} />}>
                 <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ width: '100%', pr: 1 }}>
-                  <Typography variant="body2">{step.name}</Typography>
+                  <Typography variant="body2">{getBuildStepTitle(step.name)}</Typography>
                   <Chip size="small" label={STEP_LABEL[step.status]} color={STEP_COLOR[step.status]} />
                 </Stack>
               </AccordionSummary>

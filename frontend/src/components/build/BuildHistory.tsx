@@ -1,10 +1,10 @@
 import type { JSX } from 'react';
-import { Box, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@wso2/oxygen-ui';
+import { Box, Chip, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@wso2/oxygen-ui';
 import { Hammer } from '@wso2/oxygen-ui-icons-react';
 import EmptyListing from '../EmptyListing';
 import BuildStatusLabel from './BuildStatusLabel';
 import type { BuildRun } from '../../types/build';
-import { formatBuildDuration } from '../../utils/buildFormat';
+import { failedSecurityScan, formatBuildDuration } from '../../utils/buildFormat';
 import { formatRelativeTime } from '../../utils/formatRelativeTime';
 
 interface BuildHistoryProps {
@@ -40,7 +40,10 @@ export default function BuildHistory({ builds, selectedId, onSelect }: BuildHist
                 <TableCell>{b.commitMessage}</TableCell>
                 <TableCell>{b.branch}</TableCell>
                 <TableCell>
-                  <BuildStatusLabel status={b.status} />
+                  <Stack direction="row" alignItems="center" gap={1}>
+                    <BuildStatusLabel status={b.status} />
+                    {failedSecurityScan(b) && <Chip size="small" variant="outlined" color="error" label="Security scan" />}
+                  </Stack>
                 </TableCell>
                 <TableCell>{formatBuildDuration(b)}</TableCell>
                 <TableCell>{formatRelativeTime(b.triggeredAt)}</TableCell>
