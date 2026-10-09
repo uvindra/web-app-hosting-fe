@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -77,10 +78,27 @@ func (c *caller) do(ctx context.Context, method, url string, body, out any) erro
 	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return openchoreo.NewAPIError(resp.StatusCode, raw)
+		return &bodyError{error: openchoreo.NewAPIError(resp.StatusCode, raw), body: raw}
 	}
 	if out == nil || len(bytes.TrimSpace(raw)) == 0 {
 		return nil
 	}
 	return json.Unmarshal(raw, out)
+}
+
+// bodyError keeps a non-2xx response's raw body next to its *APIError (still
+// reachable with errors.As), for callers that branch on a platform error code
+// the human message may drop.
+type bodyError struct {
+	error
+	body []byte
+}
+
+func (e *bodyError) Unwrap() error { return e.error }
+
+// errorBodyContains reports whether err is an upstream error whose response
+// body contains code.
+func errorBodyContains(err error, code string) bool {
+	var b *bodyError
+	return errors.As(err, &b) && bytes.Contains(b.body, []byte(code))
 }

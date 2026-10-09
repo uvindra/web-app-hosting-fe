@@ -25,6 +25,13 @@ func NewObserverLogs(baseURL string, tokens openchoreo.TokenSource, impersonate,
 	return &ObserverLogs{BaseURL: baseURL, call: newCaller(tokens, impersonate, forceService)}
 }
 
+// obsNoData is the Observer's error code (HTTP 500) for a query whose scope
+// has no indexed data yet: cloud-obs-proxy returns it for a fresh org (or a
+// project/environment that has never logged) when searchScope names a project
+// or environment (wso2cloud-deployment docs/cr-runbooks/runbook-cloud-obs-proxy.md).
+// It means "no results", not a failure.
+const obsNoData = "OBS-V1-L-04"
+
 type obsScope struct {
 	Namespace       string `json:"namespace"`
 	Project         string `json:"project,omitempty"`
@@ -51,6 +58,9 @@ func (o *ObserverLogs) QueryMetrics(ctx context.Context, q MetricsQuery) (map[st
 		Value     float64 `json:"value"`
 	}
 	if err := o.call.do(ctx, http.MethodPost, o.BaseURL+"/api/v1/metrics/query", body, &resp); err != nil {
+		if errorBodyContains(err, obsNoData) {
+			return map[string][]MetricSample{}, nil
+		}
 		return nil, err
 	}
 	out := make(map[string][]MetricSample, len(resp))
@@ -107,6 +117,9 @@ func (o *ObserverLogs) QueryLogs(ctx context.Context, q LogQuery) ([]LogEntry, e
 		} `json:"logs"`
 	}
 	if err := o.call.do(ctx, http.MethodPost, o.BaseURL+"/api/v1/logs/query", body, &resp); err != nil {
+		if errorBodyContains(err, obsNoData) {
+			return []LogEntry{}, nil
+		}
 		return nil, err
 	}
 	out := make([]LogEntry, 0, len(resp.Logs))
