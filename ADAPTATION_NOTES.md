@@ -145,6 +145,35 @@ one card per pipeline environment) — no registry, no plugin indirection.
 
 ## Changelog
 
+### 2026-10-09 — P2 WP5: image vulnerability scanning (Trivy, branch `p2-implementation`)
+
+Decision D15 (plan repo `GAP_ANALYSIS.md` §1a): fail the build on **CRITICAL** only, honour `<appPath>/.trivyignore`,
+Trivy DB downloaded from the internet, imported public images are not scanned.
+
+- **BFF workflows (platformres v4).** The BFF used three workflows: our `web-app-hosting-spa-builder` and the shared
+  ClusterWorkflows `dockerfile-builder` / `paketo-buildpacks-builder`. `spa-workflow.yaml.tmpl` became
+  `build-workflow.yaml.tmpl`, one template rendered three times (`.Builder` spa | docker | paketo) into the
+  namespaced `web-app-hosting-spa-builder`, `web-app-hosting-dockerfile-builder` and `web-app-hosting-paketo-builder`.
+  The copies reuse the shared ClusterWorkflowTemplates (`containerfile-build` / `paketo-buildpacks-build`, …); the
+  shared ClusterWorkflows and the `web-application` CT are untouched. The CT `allowedWorkflows` lists only the three.
+- **Scan step.** `security-scan` runs between `build-image` and `publish-image` on the saved image tar
+  (`/mnt/vol/app-image.tar`), so a failing image is never pushed: pinned
+  `aquasec/trivy:0.74.0@sha256:…` (`platformres.TrivyImage`), `--scanners vuln --severity CRITICAL`, table output,
+  `--ignorefile` when `<appPath>/.trivyignore` exists. DB download or scanner errors fail the build too (fail closed).
+  The script has no `${…}` / `{{…}}` (test enforces it).
+- **Existing web apps.** Presets now map Docker/Paketo to the namespaced copies. Components created before v4 still
+  reference the shared ClusterWorkflows: `workflowKind/workflowName` map them to the scanning copy (new builds and
+  tracks), `startBuild` ensures the platform resources and migrates the Component (`ensureTrackWorkflow`), and the
+  per-version background pass migrates every track Component (so OC-triggered auto-builds scan too).
+- **Console.** Build steps get titles (`getBuildStepTitle`: "Security scan", …). A failed scan shows an error alert
+  in the Build Details drawer listing the critical CVEs parsed from Trivy's table (`parseScanFindings`: ID, package,
+  installed / fixed version, title) and how to fix or `.trivyignore` them; the build history row gets a
+  "Security scan" chip.
+- **Verified on k3d** (own BFF :9091): Dockerfile `FROM alpine:3.10` → build failed at `security-scan` with
+  CVE-2021-36159 (apk-tools), publish skipped; adding it to `.trivyignore` → passed and published; a static
+  site (nginx-unprivileged on alpine 3.24) → passed; a Component patched back to the shared `dockerfile-builder` was
+  built with and migrated to the scanning copy. Paketo builder rendered and accepted by OC but not run (k3d memory).
+
 ### 2026-10-09 — WSO2 Cloud onboarding blocker fixes (BFF, branch `cloud-onboarding-fixes`)
 
 From the ICP / App Factory precedent review (`wso2-cloud-web-app-build-plan/WSO2_CLOUD_RECOMMENDATIONS.md`).
