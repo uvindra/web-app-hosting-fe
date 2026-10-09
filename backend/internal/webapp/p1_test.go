@@ -2,6 +2,7 @@ package webapp
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -113,11 +114,11 @@ func TestHealthCheckRecutsPreV3Release(t *testing.T) {
 		t.Fatalf("saved = %+v", got)
 	}
 	spec := bindingSpec(e)
-	if spec["releaseName"] != "run-a--r3" {
+	if spec["releaseName"] != recutA {
 		t.Fatalf("binding release = %v", spec["releaseName"])
 	}
-	if e.releaseImage("run-a--r3") != "img-a" {
-		t.Fatalf("re-cut image = %q", e.releaseImage("run-a--r3"))
+	if e.releaseImage(recutA) != "img-a" {
+		t.Fatalf("re-cut image = %q", e.releaseImage(recutA))
 	}
 	ec := spec["componentTypeEnvironmentConfigs"].(map[string]any)
 	if ec["replicas"] != 1.0 || ec["livenessProbe"].(map[string]any)["httpGet"] == nil {
@@ -137,7 +138,7 @@ func TestHealthCheckRecutsPreV3Release(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec = bindingSpec(e)
-	if spec["releaseName"] != "run-a--r3" || spec["componentTypeEnvironmentConfigs"].(map[string]any)["livenessProbe"] != nil {
+	if spec["releaseName"] != recutA || spec["componentTypeEnvironmentConfigs"].(map[string]any)["livenessProbe"] != nil {
 		t.Fatalf("after delete: %v", spec)
 	}
 }
@@ -227,7 +228,7 @@ func TestScalingHPAAndBack(t *testing.T) {
 	if cfg["enabled"] != true || cfg["minReplicas"] != 1.0 || cfg["cpuUtilization"] != 60.0 {
 		t.Fatalf("trait config = %v", cfg)
 	}
-	if spec["releaseName"] != "run-a--r3" {
+	if spec["releaseName"] != recutA {
 		t.Fatalf("release = %v", spec["releaseName"])
 	}
 
@@ -671,7 +672,7 @@ func TestFixedReplicasOnPreV3Release(t *testing.T) {
 		t.Fatal(err)
 	}
 	spec := bindingSpec(e)
-	if spec["releaseName"] != "run-a--r3" || spec["componentTypeEnvironmentConfigs"].(map[string]any)["replicas"] != 2.0 {
+	if spec["releaseName"] != recutA || spec["componentTypeEnvironmentConfigs"].(map[string]any)["replicas"] != 2.0 {
 		t.Fatalf("binding = %v", spec)
 	}
 	if hp, _ := spec["traitEnvironmentConfigs"].(map[string]any)["hpa"].(map[string]any); hp["enabled"] != false || hp["cpuUtilization"] != 60.0 {
@@ -685,7 +686,7 @@ func TestFixedReplicasOnPreV3Release(t *testing.T) {
 	if _, err := e2.svc.UpdateContainer(e2.ctx, "site", "site", "development", "main", ContainerUpdate{ImagePullPolicy: "Always", CPURequest: 50, CPULimit: 100, MemoryRequest: 256, MemoryLimit: 512}); err != nil {
 		t.Fatal(err)
 	}
-	if spec := bindingSpec(e2); spec["releaseName"] != "run-a--r3" || spec["traitEnvironmentConfigs"] != nil {
+	if spec := bindingSpec(e2); spec["releaseName"] != recutA || spec["traitEnvironmentConfigs"] != nil {
 		t.Fatalf("container update binding = %v", spec)
 	}
 
@@ -717,3 +718,6 @@ func TestFixedReplicasOnPreV3Release(t *testing.T) {
 		t.Fatalf("binding after failed strict writes = %v", spec)
 	}
 }
+
+// recutA is run-a's release re-cut with the current ComponentType.
+var recutA = "run-a--r" + strconv.Itoa(platformres.Version)

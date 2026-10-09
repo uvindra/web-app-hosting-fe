@@ -37,14 +37,13 @@ spec:
     - kind: Trait
       name: web-app-hosting-hpa
   allowedWorkflows:
+    # Our namespaced build workflows only: each scans the image (D15).
     - kind: Workflow
       name: web-app-hosting-spa-builder
-    - kind: ClusterWorkflow
-      name: paketo-buildpacks-builder
-    - kind: ClusterWorkflow
-      name: gcp-buildpacks-builder
-    - kind: ClusterWorkflow
-      name: dockerfile-builder
+    - kind: Workflow
+      name: web-app-hosting-dockerfile-builder
+    - kind: Workflow
+      name: web-app-hosting-paketo-builder
   validations:
     - rule: '${size(workload.endpoints) > 0}'
       message: "Web apps must have at least one endpoint."

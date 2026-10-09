@@ -85,6 +85,38 @@ func (s *Service) ensureTrackTrait(ctx context.Context, t track) error {
 	return err
 }
 
+// onSharedWorkflow reports whether a Component spec still builds with a
+// shared ClusterWorkflow (created before v4) that has a scanning copy.
+func onSharedWorkflow(spec *gen.ComponentSpec) bool {
+	if spec == nil || spec.Workflow == nil || spec.Workflow.Kind == nil {
+		return false
+	}
+	_, ok := platformres.ScannedWorkflow(string(*spec.Workflow.Kind), spec.Workflow.Name)
+	return ok
+}
+
+// withScannedWorkflow points a Component spec still on a shared
+// ClusterWorkflow at our security-scanning copy (D15).
+func withScannedWorkflow(spec *gen.ComponentSpec) {
+	if !onSharedWorkflow(spec) {
+		return
+	}
+	name, _ := platformres.ScannedWorkflow(string(*spec.Workflow.Kind), spec.Workflow.Name)
+	kind := gen.ComponentWorkflowConfigKindWorkflow
+	spec.Workflow.Kind, spec.Workflow.Name = &kind, name
+}
+
+// ensureTrackWorkflow migrates a track Component off a shared ClusterWorkflow
+// onto our scanning copy, so OpenChoreo-triggered builds (auto-build) scan
+// too. The namespaced workflow must already exist (EnsurePlatformResources).
+func (s *Service) ensureTrackWorkflow(ctx context.Context, t track) error {
+	if !onSharedWorkflow(t.comp.Spec) {
+		return nil
+	}
+	_, err := s.oc.MutateComponent(ctx, ns(ctx), t.Name, func(c *gen.Component) { withScannedWorkflow(c.Spec) })
+	return err
+}
+
 // Bounds of the background HPA-trait attach pass.
 const (
 	attachTraitsTimeout     = 5 * time.Minute
@@ -129,6 +161,9 @@ func (s *Service) attachTraitsToTracks(ctx context.Context) {
 		g.Go(func() error {
 			if err := s.ensureTrackTrait(ctx, trackOf(c)); err != nil {
 				slog.WarnContext(ctx, "could not attach the HPA trait", "component", c.Metadata.Name, "error", err)
+			}
+			if err := s.ensureTrackWorkflow(ctx, trackOf(c)); err != nil {
+				slog.WarnContext(ctx, "could not move the component to the scanning build workflow", "component", c.Metadata.Name, "error", err)
 			}
 			return nil
 		})

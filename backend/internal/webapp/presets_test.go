@@ -28,21 +28,21 @@ func TestWorkflowFor(t *testing.T) {
 				}
 			}},
 		{"node via paketo with port", BuildSpec{Preset: PresetNode, RepoURL: "u", Branch: "dev", Port: 3000, NodeVersion: "20"},
-			"ClusterWorkflow", "paketo-buildpacks-builder", func(t *testing.T, p map[string]any) {
+			"Workflow", "web-app-hosting-paketo-builder", func(t *testing.T, p map[string]any) {
 				env := p["buildEnv"].([]any)
 				if len(env) != 2 || env[0].(map[string]any)["value"] != "3000" {
 					t.Errorf("buildEnv = %v", env)
 				}
 			}},
 		{"docker", BuildSpec{Preset: PresetDocker, RepoURL: "u", Branch: "main", AppPath: "svc/"},
-			"ClusterWorkflow", "dockerfile-builder", func(t *testing.T, p map[string]any) {
+			"Workflow", "web-app-hosting-dockerfile-builder", func(t *testing.T, p map[string]any) {
 				d := p["docker"].(map[string]any)
 				if d["context"] != "svc" || d["filePath"] != "svc/Dockerfile" {
 					t.Errorf("docker = %v", d)
 				}
 			}},
 		{"docker root", BuildSpec{Preset: PresetDocker, RepoURL: "u", Branch: "main", AppPath: "/"},
-			"ClusterWorkflow", "dockerfile-builder", func(t *testing.T, p map[string]any) {
+			"Workflow", "web-app-hosting-dockerfile-builder", func(t *testing.T, p map[string]any) {
 				if d := p["docker"].(map[string]any); d["filePath"] != "Dockerfile" {
 					t.Errorf("docker = %v", d)
 				}

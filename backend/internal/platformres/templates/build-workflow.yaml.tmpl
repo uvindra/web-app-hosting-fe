@@ -1,16 +1,22 @@
-# Web App Hosting SPA/static build workflow `web-app-hosting-spa-builder` (D8).
-#
-# A namespaced OpenChoreo Workflow, upserted per org together with our
-# ComponentType (D9). Steps:
+# Web App Hosting build workflows (D8, D15), one template for our three
+# namespaced OpenChoreo Workflows, upserted per org with our ComponentType (D9):
+#   web-app-hosting-spa-builder        SPA/static sites (.Builder "spa")
+#   web-app-hosting-dockerfile-builder copy of the shared ClusterWorkflow dockerfile-builder (.Builder "docker")
+#   web-app-hosting-paketo-builder     copy of the shared ClusterWorkflow paketo-buildpacks-builder (.Builder "paketo")
+# The copies reuse the shared ClusterWorkflowTemplates and add the security scan;
+# the shared ClusterWorkflows are never modified. Steps:
 #   1. checkout-source     (ClusterWorkflowTemplate)
-#   2. generate-spa-files  (inline step) — writes a Dockerfile + nginx conf under
+#   2. generate-spa-files  (spa only, inline step) — writes a Dockerfile + nginx conf under
 #      <appPath>/.web-app-hosting/ and a workload.yaml descriptor at <appPath>
 #      (HTTP endpoint 8080, external), so generate-workload always declares the endpoint
-#   3. containerfile-build (ClusterWorkflowTemplate)
-#   4. publish-image       (ClusterWorkflowTemplate)
-#   5. generate-workload   (ClusterWorkflowTemplate)
+#   3. build-image         (ClusterWorkflowTemplate containerfile-build / paketo-buildpacks-build)
+#                          — saves the image to /mnt/vol/app-image.tar
+#   4. security-scan       (inline step, pinned aquasec/trivy) — scans the image tar before it is
+#      pushed; fails the build on CRITICAL vulnerabilities, honouring <appPath>/.trivyignore (D15)
+#   5. publish-image       (ClusterWorkflowTemplate)
+#   6. generate-workload   (ClusterWorkflowTemplate)
 #
-# The generated image is two/three stages: (optional) `node:<nodeVersion>` running the
+# The SPA image is two/three stages: (optional) `node:<nodeVersion>` running the
 # install + build command in appPath, a scrub stage (drops .git, makes files world
 # readable) and `nginxinc/nginx-unprivileged` serving the output dir on 8080 with SPA
 # fallback. A blank build command = static site (no node stage).
@@ -26,11 +32,17 @@
 apiVersion: openchoreo.dev/v1alpha1
 kind: Workflow
 metadata:
-  name: web-app-hosting-spa-builder
+  name: [[ .Name ]]
   labels:
     openchoreo.dev/workflow-type: "component"
   annotations:
+[[- if eq .Builder "spa" ]]
     openchoreo.dev/description: "Build a single-page or static web app and serve it with nginx-unprivileged"
+[[- else if eq .Builder "docker" ]]
+    openchoreo.dev/description: "Build with a provided Dockerfile, then scan the image for critical vulnerabilities"
+[[- else ]]
+    openchoreo.dev/description: "Build with Paketo buildpacks, then scan the image for critical vulnerabilities"
+[[- end ]]
     web-app-hosting.wso2.com/ct-version: "[[ .Version ]]"
 spec:
   workflowPlaneRef:
@@ -74,6 +86,7 @@ spec:
               type: string
               default: "."
               x-openchoreo-component-parameter-repository-app-path: true
+[[- if eq .Builder "spa" ]]
         spa:
           type: object
           default: {}
@@ -91,6 +104,58 @@ spec:
               type: string
               default: "build"
               description: "Build output directory, relative to appPath"
+[[- else if eq .Builder "docker" ]]
+        docker:
+          type: object
+          default: {}
+          description: "Docker build configuration"
+          properties:
+            context:
+              type: string
+              default: "."
+              description: "Docker build context path relative to the repository root"
+            filePath:
+              type: string
+              default: "./Dockerfile"
+              description: "Path to the Dockerfile relative to the repository root"
+        buildEnv:
+          type: array
+          default: []
+          description: "Environment variables available during the build"
+          items:
+            type: object
+            required: [name, value]
+            properties:
+              name:
+                type: string
+              value:
+                type: string
+        buildArgs:
+          type: array
+          default: []
+          description: "Docker build arguments declared with ARG in the Dockerfile"
+          items:
+            type: object
+            required: [name, value]
+            properties:
+              name:
+                type: string
+              value:
+                type: string
+[[- else ]]
+        buildEnv:
+          type: array
+          default: []
+          description: "Environment variables available during the build"
+          items:
+            type: object
+            required: [name, value]
+            properties:
+              name:
+                type: string
+              value:
+                type: string
+[[- end ]]
   runTemplate:
     apiVersion: argoproj.io/v1alpha1
     kind: Workflow
@@ -126,6 +191,7 @@ spec:
             value: ${parameters.repository.revision.commit}
           - name: app-path
             value: ${parameters.repository.appPath}
+[[- if eq .Builder "spa" ]]
           - name: docker-context
             value: ${parameters.repository.appPath}
           - name: dockerfile-path
@@ -140,6 +206,19 @@ spec:
             value: ${[]}
           - name: build-args
             value: ${[]}
+[[- else if eq .Builder "docker" ]]
+          - name: docker-context
+            value: ${parameters.docker.context}
+          - name: dockerfile-path
+            value: ${parameters.docker.filePath}
+          - name: build-env
+            value: ${parameters.buildEnv}
+          - name: build-args
+            value: ${parameters.buildArgs}
+[[- else ]]
+          - name: build-env
+            value: ${parameters.buildEnv}
+[[- end ]]
 [[- if .Cloud ]]
           - name: environment-variables
             value: ${[]}
@@ -162,21 +241,31 @@ spec:
                   name: checkout-source
                   clusterScope: true
                   template: checkout
+[[- if eq .Builder "spa" ]]
             - - name: generate-spa-files
                 template: generate-spa-files
+[[- end ]]
             - - name: build-image
                 templateRef:
+[[- if eq .Builder "paketo" ]]
+                  name: paketo-buildpacks-build
+[[- else ]]
                   name: containerfile-build
+[[- end ]]
                   clusterScope: true
                   template: build-image
                 arguments:
                   parameters:
                     - name: git-revision
                       value: '{{steps.checkout-source.outputs.parameters.git-revision}}'
+[[- if ne .Builder "paketo" ]]
                     - name: build-env
                       value: '{{workflow.parameters.build-env}}'
                     - name: build-args
                       value: '{{workflow.parameters.build-args}}'
+[[- end ]]
+            - - name: security-scan
+                template: security-scan
             - - name: publish-image
                 templateRef:
                   name: publish-image
@@ -210,6 +299,63 @@ spec:
                     - name: source-authored-at
                       value: '{{steps.checkout-source.outputs.parameters.commit-authored-at}}'
 [[- end ]]
+        # Security scan (D15): the built image tar, before it is pushed, with a
+        # pinned Trivy. Fails on CRITICAL vulnerabilities only; <appPath>/.trivyignore
+        # (one CVE ID per line) accepts known findings. The vulnerability DB is
+        # downloaded from the internet on every run; a scanner or DB error fails
+        # the build too (fail closed).
+        - name: security-scan
+          script:
+            image: [[ .TrivyImage ]]
+            command: [sh]
+            env:
+              - name: APP_PATH
+                value: '{{workflow.parameters.app-path}}'
+              - name: TRIVY_CACHE_DIR
+                value: /tmp/trivy-cache
+              - name: TRIVY_NO_PROGRESS
+                value: "true"
+              - name: TRIVY_DISABLE_VEX_NOTICE
+                value: "true"
+            volumeMounts:
+              - name: workspace
+                mountPath: /mnt/vol
+            source: |
+              set -u
+              IMAGE_TAR=/mnt/vol/app-image.tar
+              IGNORE_FILE="/mnt/vol/source/$APP_PATH/.trivyignore"
+              if [ ! -f "$IMAGE_TAR" ]; then
+                echo ">> Error: built image not found at $IMAGE_TAR"
+                exit 1
+              fi
+              set -- --input "$IMAGE_TAR" --scanners vuln --severity CRITICAL --exit-code 3 --skip-db-update --format table
+              if [ -f "$IGNORE_FILE" ]; then
+                echo ">> Using ignore file $APP_PATH/.trivyignore:"
+                grep -v -e '^ *#' -e '^ *$' "$IGNORE_FILE" | sed 's/^/>>   /'
+                set -- "$@" --ignorefile "$IGNORE_FILE"
+              fi
+              echo ">> Scanner: trivy $(trivy --version 2>/dev/null | head -n 1 | sed 's/^Version: //')"
+              echo ">> Downloading the vulnerability database"
+              if ! trivy image --download-db-only --quiet; then
+                echo ">> Security scan FAILED: could not download the vulnerability database."
+                exit 1
+              fi
+              echo ">> Scanning the image for CRITICAL vulnerabilities"
+              trivy image "$@"
+              rc=$?
+              if [ "$rc" -eq 0 ]; then
+                echo ">> Security scan passed: no CRITICAL vulnerabilities."
+                exit 0
+              fi
+              if [ "$rc" -eq 3 ]; then
+                echo ">> Security scan FAILED: the image has CRITICAL vulnerabilities (listed above)."
+                echo ">> Upgrade the affected base image or packages, or accept a finding by adding its"
+                echo ">> vulnerability ID (one per line) to $APP_PATH/.trivyignore in the repository."
+                exit 1
+              fi
+              echo ">> Security scan FAILED: the scanner exited with code $rc."
+              exit 1
+[[- if eq .Builder "spa" ]]
         - name: generate-spa-files
           script:
             image: alpine:3.20
@@ -318,6 +464,7 @@ spec:
               cat "$GEN/Dockerfile"
               echo ">> Generated workload.yaml:"
               cat "$APP_DIR/workload.yaml"
+[[- end ]]
       volumeClaimTemplates:
         - metadata:
             name: workspace

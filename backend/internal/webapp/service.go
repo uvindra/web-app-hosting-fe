@@ -96,7 +96,7 @@ func (s *Service) Meta(ctx context.Context) Meta {
 	return m
 }
 
-// EnsurePlatformResources upserts our ComponentType, SPA workflow and HPA
+// EnsurePlatformResources upserts our ComponentType, build workflows and HPA
 // Trait into the org namespace (D9), once per process per namespace, and
 // starts a background pass attaching the trait to track Components created
 // before it existed (attachTraitsInBackground; it never blocks the request).
@@ -108,12 +108,14 @@ func (s *Service) EnsurePlatformResources(ctx context.Context) error {
 	if v, ok := s.ensured.Load(n); ok && v.(int) >= platformres.Version {
 		return nil
 	}
-	wf, err := platformres.SPAWorkflow(s.opts.Profile)
+	wfs, err := platformres.BuildWorkflows(s.opts.Profile)
 	if err != nil {
 		return err
 	}
-	if err := s.oc.EnsureVersioned(ctx, n, openchoreo.KindWorkflow, wf); err != nil {
-		return fmt.Errorf("ensure SPA workflow: %w", err)
+	for _, wf := range wfs {
+		if err := s.oc.EnsureVersioned(ctx, n, openchoreo.KindWorkflow, wf); err != nil {
+			return fmt.Errorf("ensure workflow %v: %w", wf["metadata"].(map[string]any)["name"], err)
+		}
 	}
 	tr, err := platformres.HPATrait(s.opts.Profile)
 	if err != nil {

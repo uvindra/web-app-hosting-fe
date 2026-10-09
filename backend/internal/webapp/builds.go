@@ -354,6 +354,16 @@ func (s *Service) prepareBuild(ctx context.Context, t track, sha string) (*prepa
 // watcher). It makes OpenChoreo calls only, so it may run detached.
 func (s *Service) startBuild(ctx context.Context, pb *preparedBuild) (*BuildRun, error) {
 	t, commit, runName, secretRef := pb.t, pb.commit, pb.runName, pb.secretRef
+	if onSharedWorkflow(t.comp.Spec) {
+		// Created before v4: the run uses our scanning copy of the shared
+		// ClusterWorkflow (workflowName), which must exist in the namespace.
+		if err := s.EnsurePlatformResources(ctx); err != nil {
+			return nil, err
+		}
+		if err := s.ensureTrackWorkflow(ctx, t); err != nil {
+			slog.WarnContext(ctx, "could not move the component to the scanning build workflow", "component", t.Name, "error", err)
+		}
+	}
 	params := deepCopy(t.params()).(map[string]any)
 	repo, _ := params["repository"].(map[string]any)
 	if repo == nil {

@@ -58,29 +58,112 @@ func TestRenderBothProfiles(t *testing.T) {
 	}
 }
 
-// The inline shell step must not contain ${...} (OpenChoreo renders it as CEL)
-// or Argo {{...}} of its own.
-func TestSPAScriptHasNoTemplateSyntax(t *testing.T) {
-	wf, err := SPAWorkflow(Profile{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpls := wf["spec"].(map[string]any)["runTemplate"].(map[string]any)["spec"].(map[string]any)["templates"].([]any)
-	found := false
-	for _, tt := range tmpls {
-		m := tt.(map[string]any)
-		if m["name"] != "generate-spa-files" {
-			continue
+// Inline shell steps must not contain ${...} (OpenChoreo renders it as CEL)
+// or Argo {{...}} of their own.
+func TestScriptsHaveNoTemplateSyntax(t *testing.T) {
+	for _, cloud := range []bool{false, true} {
+		wfs, err := BuildWorkflows(Profile{Cloud: cloud})
+		if err != nil {
+			t.Fatal(err)
 		}
-		found = true
-		src := m["script"].(map[string]any)["source"].(string)
-		if strings.Contains(src, "${") || strings.Contains(src, "{{") {
-			t.Fatalf("script contains template syntax")
+		for _, wf := range wfs {
+			scripts := 0
+			for _, m := range runTemplates(wf) {
+				sc, ok := m["script"].(map[string]any)
+				if !ok {
+					continue
+				}
+				scripts++
+				if src := sc["source"].(string); strings.Contains(src, "${") || strings.Contains(src, "{{") {
+					t.Fatalf("%v: script %v contains template syntax", wfName(wf), m["name"])
+				}
+			}
+			if want := map[string]int{SPAWorkflowName: 2}[wfName(wf)]; scripts != max(want, 1) {
+				t.Errorf("%v: %d inline scripts", wfName(wf), scripts)
+			}
 		}
 	}
-	if !found {
-		t.Fatal("generate-spa-files template not found")
+}
+
+// Every build workflow scans the built image tar with the pinned Trivy before
+// publish-image, failing on CRITICAL only and honouring .trivyignore (D15).
+func TestBuildWorkflowsScanBeforePublish(t *testing.T) {
+	for _, cloud := range []bool{false, true} {
+		wfs, err := BuildWorkflows(Profile{Cloud: cloud})
+		if err != nil {
+			t.Fatal(err)
+		}
+		names := []string{}
+		for _, wf := range wfs {
+			names = append(names, wfName(wf))
+			tmpls := runTemplates(wf)
+			steps := []string{}
+			for _, group := range tmpls[0]["steps"].([]any) {
+				steps = append(steps, group.([]any)[0].(map[string]any)["name"].(string))
+			}
+			got := strings.Join(steps, ",")
+			want := "checkout-source,build-image," + ScanStepName + ",publish-image,generate-workload-cr"
+			if wfName(wf) == SPAWorkflowName {
+				want = "checkout-source,generate-spa-files,build-image," + ScanStepName + ",publish-image,generate-workload-cr"
+			}
+			if got != want {
+				t.Errorf("%v steps = %s", wfName(wf), got)
+			}
+			var scan map[string]any
+			for _, m := range tmpls {
+				if m["name"] == ScanStepName {
+					scan = m["script"].(map[string]any)
+				}
+			}
+			if scan == nil || scan["image"] != TrivyImage || !strings.Contains(TrivyImage, "@sha256:") {
+				t.Fatalf("%v: scan step = %v", wfName(wf), scan)
+			}
+			src := scan["source"].(string)
+			for _, s := range []string{"--input \"$IMAGE_TAR\"", "--severity CRITICAL", "--ignorefile \"$IGNORE_FILE\"", "/mnt/vol/source/$APP_PATH/.trivyignore"} {
+				if !strings.Contains(src, s) {
+					t.Errorf("%v: scan script lacks %s", wfName(wf), s)
+				}
+			}
+			raw, _ := json.Marshal(wf)
+			if got := strings.Contains(string(raw), "ecr-creds"); got != cloud {
+				t.Errorf("%v cloud=%v: ecr-creds present=%v", wfName(wf), cloud, got)
+			}
+		}
+		if strings.Join(names, ",") != SPAWorkflowName+","+DockerWorkflowName+","+PaketoWorkflowName {
+			t.Errorf("workflows = %v", names)
+		}
 	}
+	ct, _ := ComponentType(Profile{})
+	raw, _ := json.Marshal(ct["spec"].(map[string]any)["allowedWorkflows"])
+	if string(raw) != `[{"kind":"Workflow","name":"`+SPAWorkflowName+`"},{"kind":"Workflow","name":"`+DockerWorkflowName+`"},{"kind":"Workflow","name":"`+PaketoWorkflowName+`"}]` {
+		t.Errorf("allowedWorkflows = %s", raw)
+	}
+}
+
+func TestScannedWorkflow(t *testing.T) {
+	for _, c := range []struct{ kind, name, want string }{
+		{"ClusterWorkflow", "dockerfile-builder", DockerWorkflowName},
+		{"ClusterWorkflow", "paketo-buildpacks-builder", PaketoWorkflowName},
+		{"ClusterWorkflow", "gcp-buildpacks-builder", ""},
+		{"Workflow", SPAWorkflowName, ""},
+	} {
+		if got, _ := ScannedWorkflow(c.kind, c.name); got != c.want {
+			t.Errorf("%s/%s -> %q", c.kind, c.name, got)
+		}
+	}
+}
+
+func wfName(wf map[string]any) string {
+	n, _ := wf["metadata"].(map[string]any)["name"].(string)
+	return n
+}
+
+func runTemplates(wf map[string]any) []map[string]any {
+	out := []map[string]any{}
+	for _, tt := range wf["spec"].(map[string]any)["runTemplate"].(map[string]any)["spec"].(map[string]any)["templates"].([]any) {
+		out = append(out, tt.(map[string]any))
+	}
+	return out
 }
 
 func ctContainer(t *testing.T, ct map[string]any) map[string]any {

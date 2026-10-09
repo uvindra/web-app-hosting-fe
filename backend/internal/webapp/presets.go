@@ -171,7 +171,7 @@ func WorkflowFor(b BuildSpec) (Workflow, error) {
 		if file == "." || file == app || strings.HasSuffix(b.DockerfilePath, "/") {
 			return Workflow{}, fmt.Errorf("dockerfile path must name a file")
 		}
-		return Workflow{Kind: "ClusterWorkflow", Name: "dockerfile-builder", Parameters: map[string]any{
+		return Workflow{Kind: "Workflow", Name: platformres.DockerWorkflowName, Parameters: map[string]any{
 			"repository": repo,
 			"docker":     map[string]any{"context": buildCtx, "filePath": file},
 		}}, nil
@@ -183,7 +183,7 @@ func WorkflowFor(b BuildSpec) (Workflow, error) {
 		if b.Preset == PresetNode && strings.TrimSpace(b.NodeVersion) != "" {
 			env = append(env, map[string]any{"name": "BP_NODE_VERSION", "value": strings.TrimSpace(b.NodeVersion)})
 		}
-		return Workflow{Kind: "ClusterWorkflow", Name: "paketo-buildpacks-builder", Parameters: map[string]any{
+		return Workflow{Kind: "Workflow", Name: platformres.PaketoWorkflowName, Parameters: map[string]any{
 			"repository": repo,
 			"buildEnv":   env,
 		}}, nil

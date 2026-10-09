@@ -371,18 +371,32 @@ func deepCopy(v any) any {
 	}
 }
 
+// workflowKind and workflowName are the build workflow of a track
+// Component. A Component created before v4 on a shared ClusterWorkflow is
+// mapped to our security-scanning copy (D15), so every new build and track
+// is scanned even before the Component itself is migrated.
 func workflowKind(c gen.Component) string {
-	if c.Spec != nil && c.Spec.Workflow != nil && c.Spec.Workflow.Kind != nil {
-		return string(*c.Spec.Workflow.Kind)
-	}
-	return "ClusterWorkflow"
+	kind, _ := componentWorkflow(c)
+	return kind
 }
 
 func workflowName(c gen.Component) string {
-	if c.Spec != nil && c.Spec.Workflow != nil {
-		return c.Spec.Workflow.Name
+	_, name := componentWorkflow(c)
+	return name
+}
+
+func componentWorkflow(c gen.Component) (kind, name string) {
+	kind = "ClusterWorkflow"
+	if c.Spec == nil || c.Spec.Workflow == nil {
+		return kind, ""
 	}
-	return ""
+	if c.Spec.Workflow.Kind != nil {
+		kind = string(*c.Spec.Workflow.Kind)
+	}
+	if scanned, ok := platformres.ScannedWorkflow(kind, c.Spec.Workflow.Name); ok {
+		return "Workflow", scanned
+	}
+	return kind, c.Spec.Workflow.Name
 }
 
 // CheckTrackDeletable reports whether a track can be deleted.

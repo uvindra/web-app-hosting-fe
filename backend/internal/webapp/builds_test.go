@@ -5,6 +5,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/wso2/web-app-hosting/backend/internal/platformres"
 )
 
 func autoState(e *testEnv, run string) string {
@@ -112,5 +114,34 @@ func TestBuildLogsReadsStepsConcurrently(t *testing.T) {
 	}
 	if e.oc.maxInFlight < 2 || e.oc.maxInFlight > stepLogConcurrency {
 		t.Fatalf("peak concurrent step-log reads = %d", e.oc.maxInFlight)
+	}
+}
+
+// TestBuildMovesSharedWorkflowToScanningCopy: a track created before v4 on the
+// shared dockerfile-builder ClusterWorkflow builds with our scanning copy
+// (D15), which is upserted first, and the Component is migrated onto it.
+func TestBuildMovesSharedWorkflowToScanningCopy(t *testing.T) {
+	e := newTestEnv(t)
+	e.addTrack("app", "app", "main", true)
+	comp := e.oc.Get("components", "app")
+	comp["spec"].(map[string]any)["workflow"] = map[string]any{"kind": "ClusterWorkflow", "name": "dockerfile-builder",
+		"parameters": map[string]any{"repository": map[string]any{"url": "https://github.com/a/b"}}}
+	comp["metadata"].(map[string]any)["annotations"].(map[string]any)[AnnPreset] = "docker"
+	e.oc.Put("components", comp)
+
+	b, err := e.svc.TriggerBuild(e.ctx, "app", "app", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wf := e.oc.Get("workflowruns", b.ID)["spec"].(map[string]any)["workflow"].(map[string]any)
+	if wf["kind"] != "Workflow" || wf["name"] != platformres.DockerWorkflowName {
+		t.Fatalf("run workflow = %v", wf)
+	}
+	if e.oc.Get("workflows", platformres.DockerWorkflowName) == nil || e.oc.Get("workflows", platformres.PaketoWorkflowName) == nil {
+		t.Fatal("scanning workflows not upserted")
+	}
+	cwf := e.oc.Get("components", "app")["spec"].(map[string]any)["workflow"].(map[string]any)
+	if cwf["kind"] != "Workflow" || cwf["name"] != platformres.DockerWorkflowName {
+		t.Fatalf("component workflow = %v", cwf)
 	}
 }
