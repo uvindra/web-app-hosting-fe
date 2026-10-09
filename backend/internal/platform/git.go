@@ -298,9 +298,12 @@ func firstLine(s string) string {
 	return strings.TrimSpace(s)
 }
 
-// CloudGit (TARGET=wso2cloud) uses git-app-service through PAS
-// (`/wso2cloud-dp/git/github/*`) for GitHub App repositories and falls back to
-// the public GitHub API for public ones.
+// CloudGit (TARGET=wso2cloud) uses git-app-service through PAS for GitHub App
+// repositories and falls back to the public GitHub API for public ones. Calls
+// go to `{PASURL}/git/github/*`: the PAS internal endpoint's gateway prepends
+// `/wso2cloud-dp`, reaching the PAS route `/wso2cloud-dp/git/github/*`
+// (wso2cloud-deployment docs/private-repo-github-app.md: "do not add it
+// yourself").
 type CloudGit struct {
 	PASURL string
 	Public *PublicGitHub
@@ -315,7 +318,7 @@ func NewCloudGit(pasURL string, public *PublicGitHub, tokens interface {
 	return &CloudGit{PASURL: pasURL, Public: public, call: newCaller(tokens, true, false)}
 }
 
-func (g *CloudGit) url(p string) string { return g.PASURL + "/wso2cloud-dp/git/github" + p }
+func (g *CloudGit) url(p string) string { return g.PASURL + "/git/github" + p }
 
 // GitHubAppEnabled implements GitProvider.
 func (g *CloudGit) GitHubAppEnabled() bool { return true }

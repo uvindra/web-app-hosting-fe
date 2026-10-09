@@ -51,7 +51,8 @@ type TokenSource interface {
 // Config drives client construction.
 type Config struct {
 	// BaseURL is the OC API root the generated /api/v1/... paths are appended to:
-	// the OC API URL locally, or "<PAS>/wso2cloud-dp" on WSO2 Cloud.
+	// the OC API URL locally, or the PAS internal endpoint base on WSO2 Cloud
+	// (its gateway maps to PAS /wso2cloud-dp; never append that prefix).
 	BaseURL string
 	// ServiceTokens supplies the BFF's M2M token. nil disables AuthModeServiceM2M.
 	ServiceTokens TokenSource

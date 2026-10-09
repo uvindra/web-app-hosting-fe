@@ -53,7 +53,9 @@ type Config struct {
 	// TokenAuthMethod is client_secret_post (default) or client_secret_basic.
 	TokenAuthMethod string
 
-	// OpenChoreo API: on wso2cloud this is "<PAS internal URL>/wso2cloud-dp".
+	// OpenChoreo API. On wso2cloud this defaults to PAS_URL: the PAS internal
+	// endpoint's gateway already maps its base to PAS `/wso2cloud-dp`
+	// (upstreamBasePath), so the BFF must not add that prefix itself.
 	OCAPIURL string
 	// OCNamespace is the fixed org namespace on TargetOpenChoreo.
 	OCNamespace string
@@ -61,7 +63,12 @@ type Config struct {
 	LocalOrgHandle string
 
 	// Platform URLs (TargetWSO2Cloud).
-	PASURL           string // PAS internal base (for /wso2cloud-dp/git/... and /meta)
+	// PASURL is the PAS internal endpoint base, i.e.
+	// `${internal_gateway_url}/${platform_api_service_internal_base_path}`
+	// (the ipaas-service / app-factory-api convention). The gateway forwards it
+	// to PAS `/wso2cloud-dp`, so OC calls are `{PASURL}/api/v1/...` and git calls
+	// `{PASURL}/git/github/...`.
+	PASURL           string
 	SecretManagerURL string
 	ObsProxyURL      string // cloud-obs-proxy base, e.g. https://.../wso2cloud-obs
 	// BillingURL is the billing user API base (TargetWSO2Cloud), e.g.
@@ -129,8 +136,9 @@ func Load(targetOverride string) (*Config, error) {
 		c.FreePlanCodes = []string{"web-app-hosting-free"}
 	}
 	if c.OCAPIURL == "" && c.PASURL != "" {
-		c.OCAPIURL = c.PASURL + "/wso2cloud-dp"
+		c.OCAPIURL = c.PASURL
 	}
+	c.OCAPIURL = strings.TrimRight(c.OCAPIURL, "/")
 	return c, c.validate()
 }
 
