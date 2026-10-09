@@ -145,6 +145,29 @@ one card per pipeline environment) — no registry, no plugin indirection.
 
 ## Changelog
 
+### 2026-10-09 — WSO2 Cloud onboarding blocker fixes (BFF, branch `cloud-onboarding-fixes`)
+
+From the ICP / App Factory precedent review (`wso2-cloud-web-app-build-plan/WSO2_CLOUD_RECOMMENDATIONS.md`).
+No console changes; local (`TARGET=openchoreo`) behaviour is unchanged.
+
+- **PAS base path (f813c57).** `PAS_URL` is the PAS internal endpoint base, whose gateway already maps to PAS
+  `/wso2cloud-dp` (`upstreamBasePath`). `OC_API_URL` now defaults to `PAS_URL` (was `PAS_URL/wso2cloud-dp`) and
+  git-app-service calls go to `{PAS_URL}/git/github/...` (was `/wso2cloud-dp/git/github`), matching ipaas-service /
+  app-factory-api and `wso2cloud-deployment/docs/private-repo-github-app.md`. Config tests added.
+- **Billing URL optional (88d652c).** On `wso2cloud` a missing `BILLING_API_BASE_URL` no longer stops the BFF: it
+  logs an error at startup and every org gates like the free plan (`platform.UnconfiguredBilling`, fail closed).
+- **First GitHub App build (edb3070).** The PAS git route (git-app-service) takes user JWTs only, but the first build
+  of a web app / track minted its `{run}-git-secret` under the detached service identity, so it never started.
+  `TriggerBuild` is now `prepareBuild` (commit, run name, secret mint) + `startBuild` (WorkflowRun with that exact
+  name). For GitHub App repos `firstBuild` runs `prepareBuild` on the create request with the user's JWT (before the
+  201) and only creates the WorkflowRun in the background; public repos stay fully in the background. A failed mint
+  is logged and the build skipped (start it from the Build page). `CloudGit` refuses calls without a user token
+  (`ErrGitUserTokenRequired`). No other background path calls git-app-service (OC `autoBuild` is off), so there is
+  no background rebuild that would need a user token; webhook-driven rebuilds of App repos would need the platform
+  to add impersonation on the git route.
+- **Observability on fresh orgs (9712827).** cloud-obs-proxy's `500 OBS-V1-L-04` (no indexed data for the scope)
+  is read as no logs / no metrics instead of an error.
+
 ### 2026-10-08 — P1 code-review fixes
 
 - **Every settings write goes through one re-cut-aware binding writer (BFF).** Fixed replicas (HPA off) and container
