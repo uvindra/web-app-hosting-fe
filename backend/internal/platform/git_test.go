@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wso2/web-app-hosting/backend/internal/auth"
 	"github.com/wso2/web-app-hosting/backend/internal/openchoreo"
 )
 
@@ -99,3 +100,45 @@ func TestPublicGitHubRateLimit(t *testing.T) {
 		t.Fatalf("plain 403 err = %v", err)
 	}
 }
+
+// TestCloudGitPathsAndUserOnly: git-app-service is reached at
+// {PAS internal base}/git/github/... (the gateway prepends /wso2cloud-dp) with
+// the user's JWT, and service-identity calls are refused before any request.
+func TestCloudGitPathsAndUserOnly(t *testing.T) {
+	var gotPath, gotAuth, gotImpersonate string
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		gotPath, gotAuth, gotImpersonate = r.URL.Path, r.Header.Get("Authorization"), r.Header.Get("X-Impersonate-Org")
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+	g := NewCloudGit(srv.URL+"/dev-wso2cloud-platform-api-service-platform-internal-endpoint", &PublicGitHub{APIURL: "http://127.0.0.1:1"}, svcTokens{})
+	repo := RepoRef{URL: "https://github.com/acme/site", Branch: "main", InstallationID: 7}
+	user := auth.WithOrg(auth.WithUserToken(context.Background(), "user-jwt"), &auth.Org{UUID: "org-uuid"})
+
+	if _, err := g.PrepareBuild(user, repo, "default", "site", "site-run-1"); err != nil {
+		t.Fatal(err)
+	}
+	if want := "/dev-wso2cloud-platform-api-service-platform-internal-endpoint/git/github/sources/default/site/build-secret"; gotPath != want {
+		t.Fatalf("path = %q, want %q", gotPath, want)
+	}
+	if gotAuth != "Bearer user-jwt" || gotImpersonate != "" {
+		t.Fatalf("auth = %q impersonate = %q", gotAuth, gotImpersonate)
+	}
+
+	calls.Store(0)
+	for _, ctx := range []context.Context{auth.Detached(user), context.Background()} {
+		if _, err := g.PrepareBuild(ctx, repo, "default", "site", "site-run-2"); !errors.Is(err, ErrGitUserTokenRequired) {
+			t.Fatalf("service identity: err = %v", err)
+		}
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("%d requests made under the service identity", calls.Load())
+	}
+}
+
+type svcTokens struct{}
+
+func (svcTokens) Token() (string, error) { return "svc-token", nil }
+func (svcTokens) Invalidate()            {}

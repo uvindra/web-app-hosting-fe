@@ -203,7 +203,7 @@ func (s *Service) CreateWebApp(ctx context.Context, projectID string, in CreateW
 	if err := s.p.Git.BindSource(ctx, t.repoRef(), projectID, t.Name); err != nil {
 		return nil, fmt.Errorf("web app created but binding the git source failed: %w", err)
 	}
-	s.firstBuild(ctx, in.Handler, t.Name)
+	s.firstBuild(ctx, t)
 	w := s.toWebApp([]track{t}, nil, nil, nil)
 	return &w, nil
 }

@@ -312,6 +312,28 @@ func (s *Service) TriggerBuild(ctx context.Context, webAppID, trackID, sha strin
 	if t.isImage() {
 		return nil, errf(CodeNotSupported, "this web app runs a container image; it has no source builds")
 	}
+	pb, err := s.prepareBuild(ctx, *t, sha)
+	if err != nil {
+		return nil, err
+	}
+	return s.startBuild(ctx, pb)
+}
+
+// preparedBuild is a build whose clone credentials are in place. Its run name
+// is fixed: git-app-service mints `{runName}-git-secret`, which the workflow
+// mounts by that name, so the WorkflowRun must be created with exactly it.
+type preparedBuild struct {
+	t         track
+	commit    *platform.Commit
+	runName   string
+	secretRef string
+}
+
+// prepareBuild resolves the commit to build, picks the run name and mints the
+// run's clone credentials. For GitHub App repositories on WSO2 Cloud this
+// calls git-app-service through PAS, which accepts only the signed-in user's
+// JWT, so ctx must carry the user's token (never auth.Detached).
+func (s *Service) prepareBuild(ctx context.Context, t track, sha string) (*preparedBuild, error) {
 	commit := &platform.Commit{SHA: sha}
 	if c, err := s.p.Git.LatestCommit(platform.WithFreshReads(ctx), t.repoRef(), t.Project, t.Name); err == nil {
 		if sha == "" || c.SHA == sha {
@@ -325,6 +347,13 @@ func (s *Service) TriggerBuild(ctx context.Context, webAppID, trackID, sha strin
 	if err != nil {
 		return nil, fmt.Errorf("prepare build credentials: %w", err)
 	}
+	return &preparedBuild{t: t, commit: commit, runName: runName, secretRef: secretRef}, nil
+}
+
+// startBuild creates the prepared build's WorkflowRun (and its auto-deploy
+// watcher). It makes OpenChoreo calls only, so it may run detached.
+func (s *Service) startBuild(ctx context.Context, pb *preparedBuild) (*BuildRun, error) {
+	t, commit, runName, secretRef := pb.t, pb.commit, pb.runName, pb.secretRef
 	params := deepCopy(t.params()).(map[string]any)
 	repo, _ := params["repository"].(map[string]any)
 	if repo == nil {
@@ -357,7 +386,7 @@ func (s *Service) TriggerBuild(ctx context.Context, webAppID, trackID, sha strin
 		return nil, err
 	}
 	if t.AutoDeploy {
-		s.watchRun(auth.Detached(ctx), *t, runName)
+		s.watchRun(auth.Detached(ctx), t, runName)
 	}
 	b := toBuildRun(*run, t.Branch)
 	return &b, nil

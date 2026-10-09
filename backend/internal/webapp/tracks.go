@@ -260,7 +260,7 @@ func (s *Service) CreateTrack(ctx context.Context, webAppID, branch string) (*De
 	if err := s.p.Git.BindSource(ctx, t.repoRef(), t.Project, t.Name); err != nil {
 		return nil, fmt.Errorf("track created but binding the git source failed: %w", err)
 	}
-	s.firstBuild(ctx, webAppID, t.Name)
+	s.firstBuild(ctx, t)
 	return &DeploymentTrack{ID: t.Name, Branch: branch, AutoDeploy: false, CreatedAt: ts(comp.Metadata.CreationTimestamp)}, nil
 }
 
@@ -287,18 +287,47 @@ func (s *Service) checkBranch(ctx context.Context, repo platform.RepoRef, branch
 // firstBuildTimeout bounds a background first build's upstream calls.
 const firstBuildTimeout = 2 * time.Minute
 
-// firstBuild starts a new track's first build in the background, so creating
-// a web app or track returns as soon as its Component exists. A failure is
-// logged; the user can start the build from the Build page.
-func (s *Service) firstBuild(ctx context.Context, webAppID, trackID string) {
+// firstBuildPrepareTimeout bounds minting a GitHub App repository's clone
+// credentials on the create request.
+const firstBuildPrepareTimeout = 20 * time.Second
+
+// firstBuild starts a new track's first build, so creating a web app or track
+// returns as soon as its Component exists. The WorkflowRun is created in the
+// background (service identity). For a GitHub App repository the run's clone
+// secret is minted first, on the request, with the user's JWT: the PAS git
+// route (git-app-service) accepts user tokens only, so a detached call would
+// be rejected and the build would never start. A failure is logged; the user
+// can start the build from the Build page.
+func (s *Service) firstBuild(ctx context.Context, t track) {
+	var pb *preparedBuild
+	if t.repoRef().InstallationID != 0 {
+		pctx, cancel := context.WithTimeout(ctx, firstBuildPrepareTimeout)
+		p, err := s.prepareBuild(pctx, t, "")
+		cancel()
+		if err != nil {
+			slog.ErrorContext(ctx, "first build not started: could not mint the GitHub App clone credentials with the user's token; start it from the Build page",
+				"webApp", t.WebApp, "track", t.Name, "error", err)
+			return
+		}
+		pb = p
+	}
 	bctx := auth.Detached(ctx)
 	s.async.Add(1)
 	go func() {
 		defer s.async.Done()
 		ctx, cancel := context.WithTimeout(bctx, firstBuildTimeout)
 		defer cancel()
-		if _, err := s.TriggerBuild(ctx, webAppID, trackID, ""); err != nil {
-			slog.Error("first build failed to start", "webApp", webAppID, "track", trackID, "error", err)
+		var err error
+		if pb == nil {
+			// Public repository: no git-app-service call, so the service
+			// identity is fine (anonymous clone, public GitHub API).
+			pb, err = s.prepareBuild(ctx, t, "")
+		}
+		if err == nil {
+			_, err = s.startBuild(ctx, pb)
+		}
+		if err != nil {
+			slog.Error("first build failed to start", "webApp", t.WebApp, "track", t.Name, "error", err)
 		}
 	}()
 }

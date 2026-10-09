@@ -17,6 +17,7 @@ import (
 
 	"golang.org/x/sync/singleflight"
 
+	"github.com/wso2/web-app-hosting/backend/internal/auth"
 	"github.com/wso2/web-app-hosting/backend/internal/openchoreo"
 )
 
@@ -303,7 +304,8 @@ func firstLine(s string) string {
 // go to `{PASURL}/git/github/*`: the PAS internal endpoint's gateway prepends
 // `/wso2cloud-dp`, reaching the PAS route `/wso2cloud-dp/git/github/*`
 // (wso2cloud-deployment docs/private-repo-github-app.md: "do not add it
-// yourself").
+// yourself"). That route accepts user JWTs only (no impersonation), so every
+// CloudGit call must run on a request context carrying the user's token.
 type CloudGit struct {
 	PASURL string
 	Public *PublicGitHub
@@ -320,6 +322,22 @@ func NewCloudGit(pasURL string, public *PublicGitHub, tokens interface {
 
 func (g *CloudGit) url(p string) string { return g.PASURL + "/git/github" + p }
 
+// ErrGitUserTokenRequired: a GitHub App (git-app-service) call was made
+// without the signed-in user's token, e.g. from a background job. The PAS git
+// route has no impersonation and git-app-service takes the org from the
+// user's JWT, so the BFF's service identity would be rejected; such work must
+// run on a user request instead.
+var ErrGitUserTokenRequired = errors.New("GitHub App repository access needs the signed-in user's token; retry the action from the console")
+
+// do calls git-app-service with the caller's user JWT, refusing the BFF's
+// service identity up front (see ErrGitUserTokenRequired).
+func (g *CloudGit) do(ctx context.Context, method, url string, body, out any) error {
+	if auth.UserToken(ctx) == "" || auth.IsServiceIdentity(ctx) {
+		return fmt.Errorf("%s %s: %w", method, url, ErrGitUserTokenRequired)
+	}
+	return g.call.do(ctx, method, url, body, out)
+}
+
 // GitHubAppEnabled implements GitProvider.
 func (g *CloudGit) GitHubAppEnabled() bool { return true }
 
@@ -330,14 +348,14 @@ type installationList struct {
 // BindInstallations implements GitProvider.
 func (g *CloudGit) BindInstallations(ctx context.Context, code string) ([]Installation, error) {
 	var out installationList
-	err := g.call.do(ctx, http.MethodPost, g.url("/installations"), map[string]string{"code": code}, &out)
+	err := g.do(ctx, http.MethodPost, g.url("/installations"), map[string]string{"code": code}, &out)
 	return out.Items, err
 }
 
 // ListInstallations implements GitProvider.
 func (g *CloudGit) ListInstallations(ctx context.Context) ([]Installation, error) {
 	var out installationList
-	err := g.call.do(ctx, http.MethodGet, g.url("/installations"), nil, &out)
+	err := g.do(ctx, http.MethodGet, g.url("/installations"), nil, &out)
 	return out.Items, err
 }
 
@@ -346,7 +364,7 @@ func (g *CloudGit) ListRepos(ctx context.Context, installationID int64) ([]Repos
 	var out struct {
 		Items []Repository `json:"items"`
 	}
-	err := g.call.do(ctx, http.MethodGet, g.url(fmt.Sprintf("/repos?installationId=%d", installationID)), nil, &out)
+	err := g.do(ctx, http.MethodGet, g.url(fmt.Sprintf("/repos?installationId=%d", installationID)), nil, &out)
 	return out.Items, err
 }
 
@@ -363,7 +381,7 @@ func (g *CloudGit) ListBranches(ctx context.Context, repo RepoRef) ([]string, er
 		Items []string `json:"items"`
 	}
 	q := url.Values{"installationId": {fmt.Sprint(repo.InstallationID)}, "owner": {owner}, "repo": {name}}
-	err = g.call.do(ctx, http.MethodGet, g.url("/branches?"+q.Encode()), nil, &out)
+	err = g.do(ctx, http.MethodGet, g.url("/branches?"+q.Encode()), nil, &out)
 	return out.Items, err
 }
 
@@ -381,7 +399,7 @@ func (g *CloudGit) LatestCommit(ctx context.Context, repo RepoRef, project, comp
 		} `json:"items"`
 	}
 	q := url.Values{"sha": {repo.Branch}, "limit": {"1"}}
-	if err := g.call.do(ctx, http.MethodGet, g.url(fmt.Sprintf("/sources/%s/%s/commits?%s", url.PathEscape(project), url.PathEscape(component), q.Encode())), nil, &out); err != nil {
+	if err := g.do(ctx, http.MethodGet, g.url(fmt.Sprintf("/sources/%s/%s/commits?%s", url.PathEscape(project), url.PathEscape(component), q.Encode())), nil, &out); err != nil {
 		return nil, err
 	}
 	if len(out.Items) == 0 {
@@ -405,7 +423,7 @@ func (g *CloudGit) BindSource(ctx context.Context, repo RepoRef, project, compon
 		"installationId": repo.InstallationID, "owner": owner, "repo": name, "branch": repo.Branch,
 		"appPath": repo.AppPath, "repositoryUrl": repo.URL,
 	}
-	return g.call.do(ctx, http.MethodPut, g.url(fmt.Sprintf("/sources/%s/%s", url.PathEscape(project), url.PathEscape(component))), body, nil)
+	return g.do(ctx, http.MethodPut, g.url(fmt.Sprintf("/sources/%s/%s", url.PathEscape(project), url.PathEscape(component))), body, nil)
 }
 
 // PrepareBuild implements GitProvider: git-app-service writes the
@@ -416,7 +434,7 @@ func (g *CloudGit) PrepareBuild(ctx context.Context, repo RepoRef, project, comp
 	if repo.InstallationID == 0 {
 		return "", nil
 	}
-	err := g.call.do(ctx, http.MethodPost, g.url(fmt.Sprintf("/sources/%s/%s/build-secret", url.PathEscape(project), url.PathEscape(component))),
+	err := g.do(ctx, http.MethodPost, g.url(fmt.Sprintf("/sources/%s/%s/build-secret", url.PathEscape(project), url.PathEscape(component))),
 		map[string]string{"workflowRunName": runName}, nil)
 	return "", err
 }
