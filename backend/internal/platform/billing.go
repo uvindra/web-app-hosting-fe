@@ -47,6 +47,16 @@ func (b StaticBilling) Plan(context.Context) (*PlanInfo, error) {
 	return &PlanInfo{Type: b.Type, Name: name, Status: "active"}, nil
 }
 
+// UnconfiguredBilling (TARGET=wso2cloud without BILLING_API_BASE_URL) fails
+// closed: every org is on the free plan, so paid-only features stay blocked
+// until billing is configured. The BFF logs this at startup.
+type UnconfiguredBilling struct{}
+
+// Plan implements Billing.
+func (UnconfiguredBilling) Plan(context.Context) (*PlanInfo, error) {
+	return &PlanInfo{Type: PlanFree, Name: "Free"}, nil
+}
+
 // CloudBilling (TARGET=wso2cloud) reads the billing user API
 // `GET {base}/organization?product=web-app-hosting` with the caller's JWT
 // (which also activates the product's default plan on first login). Results

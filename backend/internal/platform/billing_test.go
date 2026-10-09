@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 )
@@ -33,5 +34,13 @@ func TestPlanFromSubscription(t *testing.T) {
 		if p.Type != c.typ || p.Name != c.name || (p.TrialDaysRemaining != nil) != c.trial {
 			t.Errorf("%s: got %+v", c.body, p)
 		}
+	}
+}
+
+// Without BILLING_API_BASE_URL the BFF fails closed: every org is on the free plan.
+func TestUnconfiguredBillingIsFree(t *testing.T) {
+	p, err := UnconfiguredBilling{}.Plan(context.Background())
+	if err != nil || p.Type != PlanFree {
+		t.Fatalf("plan = %+v, %v", p, err)
 	}
 }

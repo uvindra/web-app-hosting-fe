@@ -68,6 +68,20 @@ func TestOCAPIURLExplicitWins(t *testing.T) {
 	}
 }
 
+// A missing billing URL must not stop the BFF from starting on wso2cloud
+// (it fails closed to the free plan instead, see app.Build).
+func TestCloudStartsWithoutBillingURL(t *testing.T) {
+	setCloudEnv(t)
+	t.Setenv("BILLING_API_BASE_URL", "")
+	c, err := Load("")
+	if err != nil {
+		t.Fatalf("Load without BILLING_API_BASE_URL: %v", err)
+	}
+	if c.BillingURL != "" {
+		t.Fatalf("BillingURL = %q", c.BillingURL)
+	}
+}
+
 func TestCloudRequiresPASURL(t *testing.T) {
 	setCloudEnv(t)
 	t.Setenv("PAS_URL", "")

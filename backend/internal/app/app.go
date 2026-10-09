@@ -57,7 +57,14 @@ func Build(cfg *config.Config) (*api.Server, error) {
 		p.Secrets = platform.NewSecretManagerStore(cfg.SecretManagerURL, tokens)
 		p.Observability = platform.NewObserverLogs(cfg.ObsProxyURL, tokens, true, false)
 		p.BillingEnabled = true
-		p.Billing = platform.NewCloudBilling(cfg.BillingURL, webapp.ProductName, cfg.FreePlanCodes, tokens)
+		if cfg.BillingURL == "" {
+			// Defence in depth: a missing billing URL must not crash-loop the
+			// BFF. Fail closed — every org gates like the free plan.
+			slog.Error("BILLING_API_BASE_URL is not set: billing is unavailable, every org is treated as on the FREE plan (paid features are blocked); set it in the webapp-service release binding")
+			p.Billing = platform.UnconfiguredBilling{}
+		} else {
+			p.Billing = platform.NewCloudBilling(cfg.BillingURL, webapp.ProductName, cfg.FreePlanCodes, tokens)
+		}
 	} else {
 		p.Org = platform.StaticOrgResolver{Namespace: cfg.OCNamespace, Handle: cfg.LocalOrgHandle}
 		p.Git = public

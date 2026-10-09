@@ -157,7 +157,9 @@ func (c *Config) validate() error {
 		need("PAS_URL", c.PASURL)
 		need("SECRET_MANAGER_URL", c.SecretManagerURL)
 		need("OBS_PROXY_URL", c.ObsProxyURL)
-		need("BILLING_API_BASE_URL", c.BillingURL)
+		// BILLING_API_BASE_URL is deliberately not required: without it the
+		// BFF starts and fails closed (every org gates like the free plan,
+		// logged loudly at startup) rather than crash-looping.
 	case TargetOpenChoreo:
 		need("OC_API_URL", c.OCAPIURL)
 		need("OC_NAMESPACE", c.OCNamespace)
