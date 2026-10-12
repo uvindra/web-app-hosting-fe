@@ -145,6 +145,26 @@ one card per pipeline environment) — no registry, no plugin indirection.
 
 ## Changelog
 
+### 2026-10-12 — Delete web app and delete project (branch `p2-delete`)
+
+- **BFF:** `DELETE /projects/{projectId}/webapps/{webAppId}` deletes every track Component labelled for the web
+  app (non-default tracks first, the default last), each under its track lock (`lockTrack`) so it can't
+  interleave with a deploy. Per track (`purgeTrackLocked`, shared with track delete, which now also takes the
+  lock): delete the ReleaseBindings (undeploys; their configs annotation names the secret refs), delete the
+  secret-store entries best effort, delete the Component, drop the in-process lock entry. Verified on k3d that
+  OpenChoreo's `component-cleanup` finalizer removes the Workload, ComponentReleases (incl. image `-img-`
+  releases), RenderedReleases and all data-plane objects. Idempotent: tracks already being deleted are skipped
+  (204), nothing left → 404. Each deleted Component frees its quota slot (D7).
+- `DELETE /projects/{projectId}`: 409 `DEFAULT_PROJECT` for the org's default project; 409 `PROJECT_NOT_EMPTY`
+  (`details.componentCount`) while the project has live Components of **any** product (projects are shared
+  across WSO2 Cloud products, and OC's `project-cleanup` finalizer would delete them). The BFF creates nothing
+  else per project; OC cascades the ProjectRelease/ProjectReleaseBinding and the data-plane namespace. Error
+  bodies may now carry `details`. `GET /projects/{projectId}` adds `isDefault` and `componentCount`.
+- **Console:** Settings has a new **General** tab with a danger zone ("Delete web app", type-the-handle
+  confirmation, then back to the project overview). The project overview has a **Delete project** button,
+  disabled with a tooltip reason for the default project or a non-empty one. Both use the new shared
+  `ConfirmDeleteDialog` (shows BFF 409 messages via `ErrorAlert`).
+
 ### 2026-10-09 — P2 WP5: image vulnerability scanning (Trivy, branch `p2-implementation`)
 
 Decision D15 (plan repo `GAP_ANALYSIS.md` §1a): fail the build on **CRITICAL** only, honour `<appPath>/.trivyignore`,
