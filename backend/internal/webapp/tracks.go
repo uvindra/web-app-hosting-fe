@@ -422,9 +422,14 @@ func (s *Service) CheckTrackDeletable(ctx context.Context, webAppID, trackID str
 }
 
 // DeleteTrack deletes an undeployed, non-default track: its bindings, the
-// secret-store entries its secret configs own, then its Component. (The
-// default track is never deleted, and there is no web-app delete in P0.)
+// secret-store entries its secret configs own, then its Component. It holds
+// the track lock so it cannot interleave with a deploy of the track.
 func (s *Service) DeleteTrack(ctx context.Context, webAppID, trackID string) error {
+	unlock, err := s.lockTrack(ctx, trackID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	res, err := s.CheckTrackDeletable(ctx, webAppID, trackID)
 	if err != nil {
 		return err
@@ -432,6 +437,20 @@ func (s *Service) DeleteTrack(ctx context.Context, webAppID, trackID string) err
 	if !res.CanDelete {
 		return errf(CodeConflict, "%s", res.Message)
 	}
+	return s.purgeTrackLocked(ctx, trackID)
+}
+
+// purgeTrackLocked removes everything the BFF created for a track Component
+// that OpenChoreo does not cascade, then the Component itself (OpenChoreo's
+// component-cleanup finalizer removes its Workload, ComponentReleases and
+// WorkflowRuns): the ReleaseBindings (deleted explicitly so the app is
+// undeployed before the Component goes, and to read the secret refs off
+// their configs annotation) and the secret-store entries of secret configs
+// (best effort). Per-track state kept in annotations lives on the Component
+// or its bindings and goes with them. The caller holds the track lock.
+// Missing objects are not errors, so a retry after a partial failure
+// finishes the job.
+func (s *Service) purgeTrackLocked(ctx context.Context, trackID string) error {
 	n := ns(ctx)
 	bindings, err := s.oc.ListReleaseBindings(ctx, n, trackID)
 	if err != nil {
@@ -451,7 +470,12 @@ func (s *Service) DeleteTrack(ctx context.Context, webAppID, trackID string) err
 		}
 	}
 	s.deleteSecrets(ctx, trackID, secretRefs)
-	return s.oc.DeleteComponent(ctx, n, trackID)
+	if err := s.oc.DeleteComponent(ctx, n, trackID); err != nil {
+		return err
+	}
+	// Drop the in-process lock entry; a holder or waiter keeps its channel.
+	s.trackLocks.Delete(n + "/" + trackID)
+	return nil
 }
 
 // secretDeleteTimeout bounds each secret-store delete during track deletion.

@@ -16,12 +16,18 @@ const (
 	CodeNotSupported  Code = "NOT_SUPPORTED"
 	// CodePlanRequired: the feature needs a paid plan (HTTP 403).
 	CodePlanRequired Code = "PLAN_REQUIRED"
+	// CodeProjectNotEmpty: the project still has components (HTTP 409).
+	CodeProjectNotEmpty Code = "PROJECT_NOT_EMPTY"
+	// CodeDefaultProject: the org's default project is protected (HTTP 409).
+	CodeDefaultProject Code = "DEFAULT_PROJECT"
 )
 
 // Error is a domain error with a code the API layer maps to an HTTP status.
 type Error struct {
 	Code    Code
 	Message string
+	// Details is optional machine-readable context (e.g. componentCount).
+	Details map[string]any
 }
 
 func (e *Error) Error() string { return e.Message }

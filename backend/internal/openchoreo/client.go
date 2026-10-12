@@ -134,6 +134,20 @@ func (c *Client) GetDeploymentPipeline(ctx context.Context, ns, name string) (*g
 	return r.JSON200, nil
 }
 
+// DeleteProject deletes a project. OpenChoreo's project-cleanup finalizer
+// removes whatever the project still owns, so callers check it is empty.
+// A missing project is not an error.
+func (c *Client) DeleteProject(ctx context.Context, ns, name string) error {
+	r, err := c.oc.DeleteProjectWithResponse(ctx, ns, name)
+	if err != nil {
+		return err
+	}
+	if !ok(r.StatusCode()) && r.StatusCode() != http.StatusNotFound {
+		return respError(r.StatusCode(), r.Body)
+	}
+	return nil
+}
+
 // ---- components ----
 
 // ListComponents lists a project's components, optionally filtered by a label selector.

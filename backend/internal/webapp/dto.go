@@ -10,6 +10,11 @@ type Project struct {
 	UpdatedAt         string `json:"updatedAt"`
 	ActiveWebAppCount int    `json:"activeWebAppCount"`
 	Status            string `json:"status"`
+	// IsDefault marks the org's default project (it cannot be deleted).
+	IsDefault bool `json:"isDefault"`
+	// ComponentCount counts the project's components of every product; set
+	// only by GET /projects/{projectId} (a project deletes only when it is 0).
+	ComponentCount *int `json:"componentCount,omitempty"`
 }
 
 type CreateProjectInput struct {

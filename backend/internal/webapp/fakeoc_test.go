@@ -158,6 +158,9 @@ func (f *fakeOC) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if c := q.Get("component"); c != "" && ownerComponent(o) != c {
 				continue
 			}
+			if p := q.Get("project"); p != "" && nested(o, "spec", "owner", "projectName") != p {
+				continue
+			}
 			if sel := q.Get("labelSelector"); sel != "" {
 				labels, _ := o["metadata"].(map[string]any)["labels"].(map[string]any)
 				k, v, hasV := strings.Cut(sel, "=")

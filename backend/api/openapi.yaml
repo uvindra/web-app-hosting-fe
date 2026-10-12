@@ -103,6 +103,25 @@ paths:
                 $ref: '#/components/schemas/Project'
         default:
           $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteProject
+      summary: Delete an empty, non-default project
+      description: >-
+        Projects are shared across WSO2 Cloud products, so the project must have
+        no components of any product. 409 PROJECT_NOT_EMPTY (details.componentCount)
+        when it has some; 409 DEFAULT_PROJECT for the org's default project.
+        Idempotent: a project already being deleted answers 204.
+      parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: No content
+        default:
+          $ref: '#/components/responses/Error'
   /projects/{projectId}/environments:
     get:
       operationId: listProjectEnvironments
@@ -191,6 +210,29 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WebApp'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteWebApp
+      summary: Delete a web app and all its deployment tracks
+      description: >-
+        Undeploys and deletes every track Component of the web app, with the
+        secret-store entries of its secret configs. Idempotent: 204 while
+        OpenChoreo finishes deleting, 404 once nothing is left.
+      parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: webAppId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '204':
+          description: No content
         default:
           $ref: '#/components/responses/Error'
   /git/github/installations:
@@ -1433,8 +1475,12 @@ components:
       properties:
         code:
           type: string
-          enum: [BAD_REQUEST, UNAUTHORIZED, FORBIDDEN, NO_ORGANIZATION, NOT_FOUND, CONFLICT, QUOTA_EXCEEDED, NOT_SUPPORTED, GIT_RATE_LIMITED, UPSTREAM_ERROR, UPSTREAM_TIMEOUT]
+          enum: [BAD_REQUEST, UNAUTHORIZED, FORBIDDEN, NO_ORGANIZATION, NOT_FOUND, CONFLICT, QUOTA_EXCEEDED, NOT_SUPPORTED, GIT_RATE_LIMITED, UPSTREAM_ERROR, UPSTREAM_TIMEOUT, PLAN_REQUIRED, PROJECT_NOT_EMPTY, DEFAULT_PROJECT]
         message: {type: string}
+        details:
+          type: object
+          additionalProperties: true
+          description: Optional context, e.g. componentCount for PROJECT_NOT_EMPTY.
     Meta:
       type: object
       properties:
@@ -1454,6 +1500,8 @@ components:
         updatedAt: {type: string, format: date-time}
         activeWebAppCount: {type: integer}
         status: {type: string, enum: [active, deploying]}
+        isDefault: {type: boolean, description: The org's default project (cannot be deleted).}
+        componentCount: {type: integer, description: "Components of every product in the project; only on GET /projects/{projectId}."}
     CreateProjectInput:
       type: object
       required: [name, handler]

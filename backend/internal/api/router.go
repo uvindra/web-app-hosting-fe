@@ -28,10 +28,12 @@ var Routes = []Route{
 	{"GET", "/projects", (*handlers).listProjects},
 	{"POST", "/projects", (*handlers).createProject},
 	{"GET", "/projects/{projectId}", (*handlers).getProject},
+	{"DELETE", "/projects/{projectId}", (*handlers).deleteProject},
 	{"GET", "/projects/{projectId}/environments", (*handlers).projectEnvironments},
 	{"GET", "/projects/{projectId}/webapps", (*handlers).listWebApps},
 	{"POST", "/projects/{projectId}/webapps", (*handlers).createWebApp},
 	{"GET", "/projects/{projectId}/webapps/{webAppId}", (*handlers).getWebApp},
+	{"DELETE", "/projects/{projectId}/webapps/{webAppId}", (*handlers).deleteWebApp},
 	{"GET", "/git/github/installations", (*handlers).listInstallations},
 	{"POST", "/git/github/installations", (*handlers).bindInstallations},
 	{"GET", "/git/github/repos", (*handlers).listRepos},
@@ -147,6 +149,14 @@ func (h *handlers) createProject(w http.ResponseWriter, r *http.Request) {
 func (h *handlers) getProject(w http.ResponseWriter, r *http.Request) {
 	v, err := h.svc.GetProject(r.Context(), r.PathValue("projectId"))
 	respond(w, r, http.StatusOK, v, err)
+}
+
+func (h *handlers) deleteProject(w http.ResponseWriter, r *http.Request) {
+	respond(w, r, http.StatusNoContent, nil, h.svc.DeleteProject(r.Context(), r.PathValue("projectId")))
+}
+
+func (h *handlers) deleteWebApp(w http.ResponseWriter, r *http.Request) {
+	respond(w, r, http.StatusNoContent, nil, h.svc.DeleteWebApp(r.Context(), r.PathValue("projectId"), r.PathValue("webAppId")))
 }
 
 func (h *handlers) projectEnvironments(w http.ResponseWriter, r *http.Request) {

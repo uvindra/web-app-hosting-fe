@@ -38,7 +38,7 @@ func (s *Service) ListProjects(ctx context.Context) ([]Project, error) {
 	}
 	out := make([]Project, 0, len(projects))
 	for _, p := range projects {
-		out = append(out, toProject(p, counts[p.Metadata.Name]))
+		out = append(out, s.toProject(p, counts[p.Metadata.Name]))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt > out[j].UpdatedAt })
 	return out, nil
@@ -47,16 +47,19 @@ func (s *Service) ListProjects(ctx context.Context) ([]Project, error) {
 // GetProject returns one project.
 func (s *Service) GetProject(ctx context.Context, id string) (*Project, error) {
 	var (
-		p      *gen.Project
-		counts map[string]int
+		p          *gen.Project
+		counts     map[string]int
+		components int
 	)
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() (err error) { p, err = s.getProject(gctx, id); return })
 	g.Go(func() (err error) { counts, err = s.webAppCounts(gctx); return })
+	g.Go(func() (err error) { components, err = s.projectComponentCount(gctx, id); return })
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
-	out := toProject(*p, counts[id])
+	out := s.toProject(*p, counts[id])
+	out.ComponentCount = &components
 	return &out, nil
 }
 
@@ -85,7 +88,7 @@ func (s *Service) CreateProject(ctx context.Context, in CreateProjectInput) (*Pr
 		}
 		return nil, err
 	}
-	out := toProject(*p, 0)
+	out := s.toProject(*p, 0)
 	return &out, nil
 }
 
@@ -129,7 +132,7 @@ func (s *Service) webAppCounts(ctx context.Context) (map[string]int, error) {
 	return out, nil
 }
 
-func toProject(p gen.Project, webApps int) Project {
+func (s *Service) toProject(p gen.Project, webApps int) Project {
 	name := annotation(p.Metadata, ocDisplayName)
 	if name == "" {
 		name = p.Metadata.Name
@@ -138,5 +141,6 @@ func toProject(p gen.Project, webApps int) Project {
 		ID: p.Metadata.Name, Handler: p.Metadata.Name, Name: name,
 		Description: annotation(p.Metadata, ocDescription),
 		UpdatedAt:   ts(p.Metadata.CreationTimestamp), ActiveWebAppCount: webApps, Status: "active",
+		IsDefault: s.isDefaultProject(p.Metadata.Name),
 	}
 }

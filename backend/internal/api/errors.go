@@ -14,8 +14,9 @@ import (
 
 // ErrorBody is the error response shape: {"code": "...", "message": "..."}.
 type ErrorBody struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code    string         `json:"code"`
+	Message string         `json:"message"`
+	Details map[string]any `json:"details,omitempty"`
 }
 
 // Status maps an error to an HTTP status and error code (B8).
@@ -26,7 +27,7 @@ func Status(err error) (int, string) {
 			return http.StatusBadRequest, string(e.Code)
 		case webapp.CodeNotFound:
 			return http.StatusNotFound, string(e.Code)
-		case webapp.CodeConflict:
+		case webapp.CodeConflict, webapp.CodeProjectNotEmpty, webapp.CodeDefaultProject:
 			return http.StatusConflict, string(e.Code)
 		case webapp.CodeQuotaExceeded:
 			return http.StatusPaymentRequired, string(e.Code)
@@ -78,7 +79,11 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	} else {
 		slog.InfoContext(r.Context(), "request rejected", "method", r.Method, "path", r.URL.Path, "status", status, "error", err)
 	}
-	writeJSON(w, status, ErrorBody{Code: code, Message: msg})
+	body := ErrorBody{Code: code, Message: msg}
+	if e, ok := webapp.AsError(err); ok {
+		body.Details = e.Details
+	}
+	writeJSON(w, status, body)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
