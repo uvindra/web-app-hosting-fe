@@ -105,6 +105,10 @@ type httpDoer interface {
 type retryableHTTPClient struct {
 	client httpDoer
 	config RequestRetryConfig
+	// reauth, when set, re-applies credentials to each retry attempt, so a
+	// 401 → token invalidate → retry sends the refetched token rather than
+	// the one the request was first built with.
+	reauth func(ctx context.Context, req *http.Request) error
 }
 
 func newRetryableHTTPClient(client httpDoer, cfg RequestRetryConfig) *retryableHTTPClient {
@@ -155,7 +159,13 @@ func (c *retryableHTTPClient) doAttempt(ctx context.Context, req *http.Request, 
 	attemptCtx, cancel := context.WithTimeout(ctx, cfg.AttemptTimeout)
 	defer cancel()
 
-	resp, err := c.client.Do(req.Clone(attemptCtx))
+	attemptReq := req.Clone(attemptCtx)
+	if c.reauth != nil && attempt > 1 {
+		if err := c.reauth(ctx, attemptReq); err != nil {
+			return nil, err
+		}
+	}
+	resp, err := c.client.Do(attemptReq)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("context cancelled or timed out: %w", ctx.Err())

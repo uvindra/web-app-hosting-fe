@@ -105,16 +105,19 @@ func newGenClient(cfg Config) (*gen.ClientWithResponses, error) {
 			return defaultRetryOnStatus(method, status)
 		}
 	}
+	editor := authRequestEditor(cfg)
+	httpClient := newRetryableHTTPClient(inner, retry)
+	httpClient.reauth = editor
 	return gen.NewClientWithResponses(
 		strings.TrimRight(cfg.BaseURL, "/"),
-		gen.WithHTTPClient(newRetryableHTTPClient(inner, retry)),
-		gen.WithRequestEditorFn(authRequestEditor(cfg)),
+		gen.WithHTTPClient(httpClient),
+		gen.WithRequestEditorFn(editor),
 	)
 }
 
 // authRequestEditor sets Authorization (and X-Impersonate-Org on WSO2 Cloud
-// M2M calls) and X-Use-OpenAPI on every request. It runs on every retry
-// attempt, so a 401 → Invalidate → retry picks up a fresh token.
+// M2M calls) and X-Use-OpenAPI on every request. The retrying client re-runs
+// it on each retry attempt, so a 401 → Invalidate → retry picks up a fresh token.
 func authRequestEditor(cfg Config) func(ctx context.Context, req *http.Request) error {
 	strategy := cfg.Strategy
 	if strategy == nil {

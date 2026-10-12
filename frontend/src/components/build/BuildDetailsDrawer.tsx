@@ -17,7 +17,10 @@ interface BuildDetailsDrawerProps {
 
 /** Failed security scan: the critical vulnerabilities found (from the scan logs) and how to resolve them. */
 function SecurityScanAlert({ build }: { build: BuildRun }): JSX.Element {
-  const findings = parseScanFindings(build.steps.find((s) => s.name === SECURITY_SCAN_STEP)?.logs ?? []);
+  const logs = build.steps.find((s) => s.name === SECURITY_SCAN_STEP)?.logs ?? [];
+  const findings = parseScanFindings(logs);
+  // The scan step prints this line only when vulnerabilities (not a scanner or DB error) failed it.
+  const vulnerable = findings.length > 0 || logs.some((l) => l.includes('the image has CRITICAL vulnerabilities'));
   return (
     <Alert severity="error" sx={{ mb: 2 }}>
       <Typography variant="body2" sx={{ fontWeight: 600 }}>
@@ -39,7 +42,13 @@ function SecurityScanAlert({ build }: { build: BuildRun }): JSX.Element {
         </Box>
       )}
       <Typography variant="body2" sx={{ mt: 0.5 }}>
-        Upgrade the affected base image or packages, or accept a finding by adding its ID (one per line) to a <code>.trivyignore</code> file in the component directory.
+        {vulnerable ? (
+          <>
+            Upgrade the affected base image or packages, or accept a finding by adding its ID (one per line) to a <code>.trivyignore</code> file in the component directory.
+          </>
+        ) : (
+          'The scanner could not complete (for example, the vulnerability database could not be downloaded). Rebuild to retry.'
+        )}
       </Typography>
     </Alert>
   );

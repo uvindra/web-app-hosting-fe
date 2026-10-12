@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -126,7 +127,8 @@ const (
 // attachTraitsInBackground starts attachTraitsToTracks for the request's
 // namespace once per process per platformres.Version, detached from the
 // request (its own timeout, service identity) so the first request after a
-// rollout doesn't wait on every track Component being updated.
+// rollout doesn't wait on every track Component being updated. A pass that
+// fails for any track is forgotten, so the next request retries it.
 func (s *Service) attachTraitsInBackground(ctx context.Context) {
 	key := ns(ctx) + "@" + strconv.Itoa(platformres.Version)
 	if _, started := s.traitPasses.LoadOrStore(key, struct{}{}); started {
@@ -138,20 +140,28 @@ func (s *Service) attachTraitsInBackground(ctx context.Context) {
 		defer s.async.Done()
 		ctx, cancel := context.WithTimeout(bctx, attachTraitsTimeout)
 		defer cancel()
-		s.attachTraitsToTracks(ctx)
+		if !s.attachTraitsToTracks(ctx) {
+			s.traitPasses.Delete(key)
+		}
 	}()
 }
 
 // attachTraitsToTracks attaches the HPA trait to every web-app track
 // Component in the namespace that lacks it (CT upgrade to v3), a few at a
 // time. Best effort: failures are logged, and the trait is attached again
-// lazily (ensureTrackTrait) before a release is re-cut.
-func (s *Service) attachTraitsToTracks(ctx context.Context) {
+// lazily (ensureTrackTrait) before a release is re-cut. It reports whether
+// every track was updated.
+//
+// The workflow move runs before the trait attach: the upgraded CT allows only
+// our scanning workflows, so a Component still on a shared builder can't
+// build (or be written) until it is moved.
+func (s *Service) attachTraitsToTracks(ctx context.Context) bool {
 	comps, err := s.oc.ListComponents(ctx, ns(ctx), "", LabelProduct+"="+ProductName)
 	if err != nil {
 		slog.WarnContext(ctx, "could not list track components to attach the HPA trait", "error", err)
-		return
+		return false
 	}
+	var failed atomic.Bool
 	var g errgroup.Group
 	g.SetLimit(attachTraitsConcurrency)
 	for _, c := range comps {
@@ -159,16 +169,19 @@ func (s *Service) attachTraitsToTracks(ctx context.Context) {
 			continue
 		}
 		g.Go(func() error {
-			if err := s.ensureTrackTrait(ctx, trackOf(c)); err != nil {
-				slog.WarnContext(ctx, "could not attach the HPA trait", "component", c.Metadata.Name, "error", err)
-			}
 			if err := s.ensureTrackWorkflow(ctx, trackOf(c)); err != nil {
+				failed.Store(true)
 				slog.WarnContext(ctx, "could not move the component to the scanning build workflow", "component", c.Metadata.Name, "error", err)
+			}
+			if err := s.ensureTrackTrait(ctx, trackOf(c)); err != nil {
+				failed.Store(true)
+				slog.WarnContext(ctx, "could not attach the HPA trait", "component", c.Metadata.Name, "error", err)
 			}
 			return nil
 		})
 	}
 	_ = g.Wait()
+	return !failed.Load()
 }
 
 // applyBindingSettings is the single writer of an environment's settings

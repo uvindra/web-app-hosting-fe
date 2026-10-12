@@ -552,3 +552,11 @@ and shaping them to choreo-console's Web App scope (see [Sidebar scope](#sidebar
     storing the whole URL — fixed to detect an already-full URL and not re-prefix it.
 - Added the dev-only demo helper (`AuthContext.devLogin`, `DevSeedSession.tsx`, `/dev-login`
   route, `pnpm demo` script) — see [Dev-only demo helper](#dev-only-demo-helper-doesnt-exist-in-ipaas-at-all).
+
+### 2026-10-12 — WP5 / Host-header review fixes
+
+- **Scan step bounded (platformres v5).** `security-scan` gets `activeDeadlineSeconds: 1200`, requests of 250m/512Mi with a 2Gi memory limit, and Trivy `--timeout` (5m for the DB download, 15m for the scan). A hung DB download or an oversized image now fails the step with a clear message instead of stalling or being evicted.
+- **Workflow move before trait attach, retried on failure.** The background upgrade pass moves each track to our scanning workflow before attaching the HPA trait, because the upgraded CT allows only our workflows. A pass that fails for any track is forgotten, so the next request retries it (still one pass at a time per namespace).
+- **Scanner-error wording.** When the scan fails without vulnerabilities (DB download or scanner error), the build drawer says to rebuild instead of suggesting package upgrades or `.trivyignore`.
+- **401 retry sends a fresh token.** The OC client's retry attempts re-run the auth request editor (`retryableHTTPClient.reauth`). Before, a 401 invalidated the cached service token, but the retry reused the old `Authorization` header. Covered by `TestRetryAfter401SendsFreshToken`.
+- Not changed (low): wrapped-cell CVE parsing (falls back to the generic message); `..` in the app path (quoted in the scan step).

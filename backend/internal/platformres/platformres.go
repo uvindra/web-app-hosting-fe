@@ -24,7 +24,7 @@ import (
 // v4: Trivy security scan step in every build workflow; namespaced
 // web-app-hosting-dockerfile-builder / web-app-hosting-paketo-builder replace
 // the shared ClusterWorkflows in allowedWorkflows (D15).
-const Version = 4
+const Version = 5
 
 const (
 	ComponentTypeName = "web-app-hosting"

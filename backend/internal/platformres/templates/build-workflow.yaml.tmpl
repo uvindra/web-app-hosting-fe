@@ -303,11 +303,19 @@ spec:
         # pinned Trivy. Fails on CRITICAL vulnerabilities only; <appPath>/.trivyignore
         # (one CVE ID per line) accepts known findings. The vulnerability DB is
         # downloaded from the internet on every run; a scanner or DB error fails
-        # the build too (fail closed).
+        # the build too (fail closed). Bounded so a hung DB download or an
+        # oversized image fails the step instead of stalling the build.
         - name: security-scan
+          activeDeadlineSeconds: 1200
           script:
             image: [[ .TrivyImage ]]
             command: [sh]
+            resources:
+              requests:
+                cpu: 250m
+                memory: 512Mi
+              limits:
+                memory: 2Gi
             env:
               - name: APP_PATH
                 value: '{{workflow.parameters.app-path}}'
@@ -328,7 +336,7 @@ spec:
                 echo ">> Error: built image not found at $IMAGE_TAR"
                 exit 1
               fi
-              set -- --input "$IMAGE_TAR" --scanners vuln --severity CRITICAL --exit-code 3 --skip-db-update --format table
+              set -- --input "$IMAGE_TAR" --scanners vuln --severity CRITICAL --exit-code 3 --skip-db-update --timeout 15m --format table
               if [ -f "$IGNORE_FILE" ]; then
                 echo ">> Using ignore file $APP_PATH/.trivyignore:"
                 grep -v -e '^ *#' -e '^ *$' "$IGNORE_FILE" | sed 's/^/>>   /'
@@ -336,7 +344,7 @@ spec:
               fi
               echo ">> Scanner: trivy $(trivy --version 2>/dev/null | head -n 1 | sed 's/^Version: //')"
               echo ">> Downloading the vulnerability database"
-              if ! trivy image --download-db-only --quiet; then
+              if ! trivy image --download-db-only --quiet --timeout 5m; then
                 echo ">> Security scan FAILED: could not download the vulnerability database."
                 exit 1
               fi
