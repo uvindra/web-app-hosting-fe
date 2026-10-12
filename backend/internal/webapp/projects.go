@@ -38,6 +38,11 @@ func (s *Service) ListProjects(ctx context.Context) ([]Project, error) {
 	}
 	out := make([]Project, 0, len(projects))
 	for _, p := range projects {
+		// A deleted project lingers until OC's cleanup finalizer finishes; hide it
+		// like a deleting web app.
+		if p.Metadata.DeletionTimestamp != nil {
+			continue
+		}
 		out = append(out, s.toProject(p, counts[p.Metadata.Name]))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt > out[j].UpdatedAt })

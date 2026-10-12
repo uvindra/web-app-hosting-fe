@@ -124,6 +124,25 @@ func TestDeleteProject(t *testing.T) {
 	}
 }
 
+// TestListProjectsHidesDeleting: a project OC is still finalizing isn't listed.
+func TestListProjectsHidesDeleting(t *testing.T) {
+	e := newTestEnv(t)
+	e.oc.Put("projects", obj("p1", nil))
+	e.oc.Put("projects", map[string]any{"metadata": map[string]any{"name": "p2", "deletionTimestamp": "2026-10-12T06:55:40Z"}})
+	ps, err := e.svc.ListProjects(e.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range ps {
+		if p.ID == "p2" {
+			t.Fatalf("deleting project listed: %+v", ps)
+		}
+	}
+	if !slices.ContainsFunc(ps, func(p Project) bool { return p.ID == "p1" }) {
+		t.Fatalf("live project missing: %+v", ps)
+	}
+}
+
 func isCode(err error, c Code) bool {
 	e, ok := AsError(err)
 	return ok && e.Code == c
