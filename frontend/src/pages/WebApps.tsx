@@ -8,6 +8,7 @@ import SampleCard from '../components/SampleCard';
 import { useProjectByHandler } from '../hooks/useProjects';
 import { useWebApps, useCreateSampleWebApp } from '../hooks/useWebApps';
 import ErrorAlert from '../components/ErrorAlert';
+import DeleteProjectButton from '../components/DeleteProjectButton';
 import { useSamples } from '../hooks/useSamples';
 import { hasProject, useScope } from '../nav';
 import { newWebAppUrl, webAppOverviewUrl } from '../paths';
@@ -85,11 +86,14 @@ export default function WebApps(): JSX.Element {
 
   return (
     <PageContent>
-      <Stack sx={{ mb: 4 }}>
-        <Typography variant="h1">{project.name}</Typography>
-        <Typography variant="body2" color="text.secondary">
-          {webAppSummary(webApps ?? [])}
-        </Typography>
+      <Stack direction="row" gap={2} alignItems="flex-start" justifyContent="space-between" sx={{ mb: 4 }}>
+        <Stack>
+          <Typography variant="h1">{project.name}</Typography>
+          <Typography variant="body2" color="text.secondary">
+            {webAppSummary(webApps ?? [])}
+          </Typography>
+        </Stack>
+        <DeleteProjectButton org={scope.org} project={project} />
       </Stack>
 
       <Stack direction="row" gap={1} alignItems="center" sx={{ mb: 3 }}>

@@ -25,6 +25,7 @@ import WebAppScaling from '../pages/WebAppScaling';
 import WebAppSettings from '../pages/WebAppSettings';
 import WebAppDeploymentTracks from '../pages/WebAppDeploymentTracks';
 import WebAppUrlSettings from '../pages/WebAppUrlSettings';
+import WebAppGeneralSettings from '../pages/WebAppGeneralSettings';
 import GitHubAuthCallback from '../pages/GitHubAuthCallback';
 import DevSeedSession from '../pages/DevSeedSession';
 import { ghAppCallbackUrl, loginUrl, oidcCallbackUrl } from '../paths';
@@ -65,6 +66,7 @@ export default function AppRoutes(): JSX.Element {
             <Route index element={<Navigate to="deployment-tracks" replace />} />
             <Route path="deployment-tracks" element={<WebAppDeploymentTracks />} />
             <Route path="url-settings" element={<WebAppUrlSettings />} />
+            <Route path="general" element={<WebAppGeneralSettings />} />
           </Route>
         </Route>
       </Route>

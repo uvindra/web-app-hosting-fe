@@ -18,6 +18,14 @@ export async function createProject(input: CreateProjectInput): Promise<Project>
   return webAppHostingClient.post<Project>('/projects', { name: input.name, handler: input.handler, description: input.description });
 }
 
+/**
+ * Deletes an empty, non-default project. Rejects with a 409 HttpError: `PROJECT_NOT_EMPTY` while it has components
+ * of any product (projects are shared across WSO2 Cloud products), `DEFAULT_PROJECT` for the org's default project.
+ */
+export async function deleteProject(projectId: string): Promise<void> {
+  await webAppHostingClient.delete<void>(`/projects/${enc(projectId)}`);
+}
+
 /** The project's deployment-pipeline environments, in promotion order. */
 export async function fetchProjectEnvironments(projectId: string): Promise<Environment[]> {
   return webAppHostingClient.get<Environment[]>(`/projects/${enc(projectId)}/environments`);

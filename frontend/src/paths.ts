@@ -105,6 +105,10 @@ export function webAppDeploymentTracksUrl(org: string, project: string, webApp: 
   return `${webAppBase(org, project, webApp)}/settings/deployment-tracks`;
 }
 
+export function webAppGeneralSettingsUrl(org: string, project: string, webApp: string): string {
+  return `${webAppBase(org, project, webApp)}/settings/general`;
+}
+
 export function webAppUrlSettingsUrl(org: string, project: string, webApp: string): string {
   return `${webAppBase(org, project, webApp)}/settings/url-settings`;
 }

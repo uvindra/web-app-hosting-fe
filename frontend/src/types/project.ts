@@ -9,6 +9,10 @@ export interface Project {
   activeWebAppCount: number;
   status: ProjectStatus;
   deleting?: boolean;
+  /** The org's default project: it cannot be deleted. */
+  isDefault?: boolean;
+  /** Components of every product in the project (only on a single-project read); it deletes only when 0. */
+  componentCount?: number;
 }
 
 export interface CreateProjectInput {

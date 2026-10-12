@@ -1,6 +1,6 @@
 import { skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchWebApps, fetchWebApp, createWebApp } from '../api/webApps';
-import type { CreateWebAppInput } from '../types/webApp';
+import { fetchWebApps, fetchWebApp, createWebApp, deleteWebApp } from '../api/webApps';
+import type { CreateWebAppInput, WebApp } from '../types/webApp';
 import type { Sample } from '../types/sample';
 import { createFromSample } from '../utils/sampleInput';
 
@@ -40,5 +40,21 @@ export function useCreateSampleWebApp(projectId: string) {
   return useMutation({
     mutationFn: (sample: Sample) => createFromSample(sample, (input) => createWebApp(projectId, input)),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['webApps', projectId] }),
+  });
+}
+
+export function useDeleteWebApp(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (webAppId: string) => deleteWebApp(projectId, webAppId),
+    onSuccess: (_, webAppId) => {
+      // OpenChoreo deletes asynchronously (the BFF hides Components being deleted): drop the web app now.
+      qc.setQueryData<WebApp[]>(['webApps', projectId], (apps) => apps?.filter((a) => a.id !== webAppId));
+      qc.removeQueries({ queryKey: ['webApp', projectId, webAppId] });
+      qc.removeQueries({ queryKey: ['deploymentTracks', webAppId] });
+      void qc.invalidateQueries({ queryKey: ['webApps', projectId] });
+      void qc.invalidateQueries({ queryKey: ['projects'] });
+      void qc.invalidateQueries({ queryKey: ['project', projectId] });
+    },
   });
 }

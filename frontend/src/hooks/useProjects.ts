@@ -1,6 +1,6 @@
 import { skipToken, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchProjects, fetchProject, createProject, fetchProjectEnvironments } from '../api/projects';
-import type { CreateProjectInput } from '../types/project';
+import { fetchProjects, fetchProject, createProject, deleteProject, fetchProjectEnvironments } from '../api/projects';
+import type { CreateProjectInput, Project } from '../types/project';
 
 export function useProjects(orgHandle: string) {
   return useQuery({
@@ -32,7 +32,19 @@ export function useCreateProject() {
   });
 }
 
-/** The project's deployment-pipeline environments, in promotion order. */
+export function useDeleteProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (projectId: string) => deleteProject(projectId),
+    onSuccess: (_, projectId) => {
+      // OpenChoreo deletes asynchronously: drop the project now rather than wait for the refetch.
+      qc.setQueriesData<Project[]>({ queryKey: ['projects'] }, (projects) => projects?.filter((p) => p.id !== projectId));
+      qc.removeQueries({ queryKey: ['project', projectId] });
+      void qc.invalidateQueries({ queryKey: ['projects'] });
+    },
+  });
+}
+
 /** A project's pipeline environments (`undefined`: the project isn't known yet, nothing is fetched). */
 export function useProjectEnvironments(projectId: string | undefined) {
   return useQuery({

@@ -2,7 +2,7 @@ import type { JSX } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router';
 import { Tab, Tabs } from '@wso2/oxygen-ui';
 import WebAppPage from '../components/webapp/WebAppPage';
-import { webAppDeploymentTracksUrl, webAppUrlSettingsUrl } from '../paths';
+import { webAppDeploymentTracksUrl, webAppGeneralSettingsUrl, webAppUrlSettingsUrl } from '../paths';
 
 export default function WebAppSettings(): JSX.Element {
   const navigate = useNavigate();
@@ -15,6 +15,7 @@ export default function WebAppSettings(): JSX.Element {
         const tabs = [
           { label: 'Deployment Tracks', url: webAppDeploymentTracksUrl(org, project, webApp) },
           { label: 'URL Settings', url: webAppUrlSettingsUrl(org, project, webApp) },
+          { label: 'General', url: webAppGeneralSettingsUrl(org, project, webApp) },
         ];
         const active = tabs.find((t) => pathname.startsWith(t.url))?.url ?? false;
         return (

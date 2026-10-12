@@ -24,3 +24,8 @@ export async function fetchWebApp(projectId: string, webAppId: string): Promise<
 export async function createWebApp(projectId: string, input: CreateWebAppInput): Promise<WebApp> {
   return webAppHostingClient.post<WebApp>(`/projects/${enc(projectId)}/webapps`, input);
 }
+
+/** Undeploys and deletes the web app with all its deployment tracks (each frees a quota unit). */
+export async function deleteWebApp(projectId: string, webAppId: string): Promise<void> {
+  await webAppHostingClient.delete<void>(`/projects/${enc(projectId)}/webapps/${enc(webAppId)}`);
+}
